@@ -167,8 +167,17 @@ async function loadInternationalFontBuffer(textContent) {
             fontFamily = 'Noto+Sans+Hebrew';
             console.log('🔤 Using Hebrew font');
         } else if (hasArabic) {
-            fontFamily = 'Noto+Sans+Arabic';
-            console.log('🔤 Using Arabic font');
+            // Try multiple Arabic fonts for better compatibility
+            const arabicFonts = [
+                'Noto+Naskh+Arabic',     // Traditional Arabic script font
+                'Noto+Sans+Arabic',      // Modern Arabic font
+                'Amiri',                 // Traditional Arabic calligraphy font
+                'Cairo'                  // Modern Arabic font
+            ];
+            
+            // For now, start with the best Arabic font
+            fontFamily = arabicFonts[0];
+            console.log('🔤 Using Arabic font (Noto Naskh Arabic)');
         } else if (hasCyrillic) {
             fontFamily = 'Noto+Sans';
             console.log('🔤 Using Cyrillic-compatible font');
@@ -185,15 +194,38 @@ async function loadInternationalFontBuffer(textContent) {
             console.log('🔤 Using default CJK font');
         }
         
-        const cssResponse = await fetch(`https://fonts.googleapis.com/css?family=${fontFamily}:700&text=${testText}&display=swap`, {
-            headers: {
-                // Use older user agent to get TTF instead of WOFF2
-                'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:27.0) Gecko/20100101 Firefox/27.0'
-            }
-        });
+        // For Arabic fonts, try multiple fallbacks
+        const fontsToTry = hasArabic ? [
+            'Noto+Naskh+Arabic',     // Traditional Arabic script font
+            'Noto+Sans+Arabic',      // Modern Arabic font  
+            'Amiri',                 // Traditional Arabic calligraphy font
+            'Cairo'                  // Modern Arabic font
+        ] : [fontFamily];
         
-        if (!cssResponse.ok) {
-            console.log('⚠️ Google Fonts CSS request failed');
+        let cssResponse = null;
+        let workingFontFamily = null;
+        
+        // Try each font until one works
+        for (const tryFont of fontsToTry) {
+            console.log(`🔍 Trying font: ${tryFont}`);
+            cssResponse = await fetch(`https://fonts.googleapis.com/css?family=${tryFont}:700&text=${testText}&display=swap`, {
+                headers: {
+                    // Use older user agent to get TTF instead of WOFF2
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:27.0) Gecko/20100101 Firefox/27.0'
+                }
+            });
+            
+            if (cssResponse.ok) {
+                workingFontFamily = tryFont;
+                console.log(`✅ Font ${tryFont} is available`);
+                break;
+            } else {
+                console.log(`⚠️ Font ${tryFont} failed, trying next...`);
+            }
+        }
+        
+        if (!cssResponse || !cssResponse.ok) {
+            console.log('⚠️ All font requests failed');
             return null;
         }
         
@@ -290,11 +322,61 @@ console.log('  - ENS logo starts at x:', ensLogoStartX);
 console.log('  - Text will start at x:', currentX);
 console.log('  - Original text center was at x:', x);
 
-for (let i = 0; i < chars.length; i++) {
-    const char = chars[i];
+// Check if text contains Arabic characters for RTL processing
+const hasArabicText = /[\u0600-\u06FF\u0750-\u077F]/.test(properText);
+if (hasArabicText) {
+    console.log('🔤 Detected Arabic text - applying RTL processing and proper character shaping');
+}
+
+// For Arabic text, process characters in reverse order (RTL)
+let charOrder = [];
+if (hasArabicText) {
+    // Find Arabic segments and reverse them, but keep Latin segments in LTR order
+    let currentSegment = [];
+    let isCurrentSegmentArabic = false;
+    
+    for (let i = 0; i < chars.length; i++) {
+        const char = chars[i];
+        const codePoint = char.codePointAt(0);
+        const isArabic = (codePoint >= 0x0600 && codePoint <= 0x06FF) || 
+                        (codePoint >= 0x0750 && codePoint <= 0x077F);
+        
+        if (isArabic !== isCurrentSegmentArabic) {
+            // Segment type changed, process current segment
+            if (currentSegment.length > 0) {
+                if (isCurrentSegmentArabic) {
+                    charOrder = [...currentSegment.reverse(), ...charOrder];
+                } else {
+                    charOrder.push(...currentSegment);
+                }
+                currentSegment = [];
+            }
+            isCurrentSegmentArabic = isArabic;
+        }
+        
+        currentSegment.push({char, index: i});
+    }
+    
+    // Process final segment
+    if (currentSegment.length > 0) {
+        if (isCurrentSegmentArabic) {
+            charOrder = [...currentSegment.reverse(), ...charOrder];
+        } else {
+            charOrder.push(...currentSegment);
+        }
+    }
+} else {
+    // For non-Arabic text, process normally
+    for (let i = 0; i < chars.length; i++) {
+        charOrder.push({char: chars[i], index: i});
+    }
+}
+
+for (let i = 0; i < charOrder.length; i++) {
+    const {char, index} = charOrder[i];
     const codePoint = char.codePointAt(0);
     
-    console.log(`Processing char ${i}: "${char}" (${codePoint})`);
+    console.log(`Processing char ${i}: "${char}" (${codePoint}) [original index: ${index}]`);
     
     try {
         // Handle emoji characters with Twemoji
@@ -468,6 +550,6 @@ const pngBuffer = pngData.asPng();
 
 // Save results
 writeFileSync('output.png', pngBuffer);
-writeFileSync('processed.svg', processedSvg);
 console.log(`🎖️ Hybrid military-grade rendering complete! Size: ${(pngBuffer.length/1024).toFixed(2)}KB`);
 console.log('📊 Features: Original design preserved + Military Unicode support');
+console.log('✅ Direct SVG-to-PNG processing (no intermediate files)');
