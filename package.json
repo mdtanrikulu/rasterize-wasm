@@ -1,0 +1,24 @@
+{
+  "name": "magick-wasm",
+  "version": "1.0.0",
+  "description": "ImageMagick WASM SVG to PNG converter",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node main.js",
+    "canvaskit": "node canvaskit-main.js"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
+    "opentype.js": "^1.3.4"
+  },
+  "keywords": [
+    "imagemagick",
+    "wasm",
+    "svg",
+    "png",
+    "convert"
+  ],
+  "author": "",
+  "license": "MIT"
+}
