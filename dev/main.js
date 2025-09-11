@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import opentype from 'opentype.js';
-import { base64svg } from './base64Img.js';
+import { base64svg } from './examples/assets/base64Img.js';
 
 // Initialize resvg WASM
 const wasmResponse = await fetch('https://cdn.jsdelivr.net/npm/@resvg/resvg-wasm@2.6.2/index_bg.wasm');

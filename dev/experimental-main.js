@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import opentype from 'opentype.js';
-import { base64svg } from './base64Img.js';
+import { base64svg } from './examples/assets/base64Img.js';
 
 console.log('🚀 Hybrid Unicode renderer - preserving original design...');
 

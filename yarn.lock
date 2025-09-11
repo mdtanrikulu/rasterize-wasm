@@ -12,15 +12,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"magick-wasm@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "magick-wasm@workspace:."
-  dependencies:
-    "@resvg/resvg-wasm": "npm:^2.6.2"
-    opentype.js: "npm:^1.3.4"
-  languageName: unknown
-  linkType: soft
-
 "opentype.js@npm:^1.3.4":
   version: 1.3.4
   resolution: "opentype.js@npm:1.3.4"
@@ -32,6 +23,15 @@ __metadata:
   checksum: 10c0/7de1c175c439a648f32f5113c619cdcd7ae09096cb791b5b1b8b24afdaf76ccdf8938297dab61ded48e032e8ebb54bcf444eedef562498f7e241dbebcf3da2f6
   languageName: node
   linkType: hard
+
+"rasterize-wasm@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "rasterize-wasm@workspace:."
+  dependencies:
+    "@resvg/resvg-wasm": "npm:^2.6.2"
+    opentype.js: "npm:^1.3.4"
+  languageName: unknown
+  linkType: soft
 
 "string.prototype.codepointat@npm:^0.2.1":
   version: 0.2.1

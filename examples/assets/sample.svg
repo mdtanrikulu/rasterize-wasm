@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="100%" stop-color="#4ecdc4"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+    <style type="text/css">
+      @font-face {
+        font-family: "Satoshi";
+        font-style: normal;
+        font-weight: 600 900;
+        src: url(data:font/truetype;base64,AAEAAAAPAIAAAW...[truncated for brevity]);
+      }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="400" height="200" fill="url(#gradient)"/>
+  
+  <!-- Main text with international characters -->
+  <text x="200" y="80" font-family="Satoshi, sans-serif" font-size="32" font-weight="bold" 
+        text-anchor="middle" fill="white" filter="url(#shadow)">
+    Hello 世界! مرحبا 🌍
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="200" y="120" font-family="Satoshi, sans-serif" font-size="18" 
+        text-anchor="middle" fill="white" opacity="0.9">
+    Universal SVG Renderer
+  </text>
+  
+  <!-- ENS-style domain -->
+  <text x="200" y="160" font-family="Satoshi, sans-serif" font-size="24" font-weight="bold"
+        text-anchor="middle" fill="#ffff00" filter="url(#shadow)">
+    unicode.eth
+  </text>
+</svg>

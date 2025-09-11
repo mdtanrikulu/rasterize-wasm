@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="300" height="150" viewBox="0 0 300 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simple example without embedded fonts -->
+  <rect width="300" height="150" fill="#2c3e50"/>
+  
+  <text x="150" y="60" font-family="Arial, sans-serif" font-size="28" font-weight="bold"
+        text-anchor="middle" fill="#ecf0f1">
+    नमस्ते World! 🚀
+  </text>
+  
+  <text x="150" y="100" font-family="Arial, sans-serif" font-size="16"
+        text-anchor="middle" fill="#bdc3c7">
+    Devanagari + Latin + Emoji
+  </text>
+</svg>

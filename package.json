@@ -1,23 +1,43 @@
 {
-  "name": "magick-wasm",
+  "name": "rasterize-wasm",
   "version": "1.0.0",
-  "description": "ImageMagick WASM SVG to PNG converter",
-  "main": "main.js",
+  "description": "Universal Unicode SVG to PNG renderer with international font support",
+  "main": "src/index.js",
   "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./adapters": "./src/adapters/index.js",
+    "./renderers": "./src/renderers/index.js",
+    "./utils": "./src/utils/index.js"
+  },
   "scripts": {
-    "start": "node main.js",
-    "experimental": "node experimental-main.js"
+    "start": "node dev/main.js",
+    "experimental": "node dev/experimental-main.js",
+    "example": "node examples/usage.js",
+    "test": "node examples/usage.js"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "^2.6.2",
     "opentype.js": "^1.3.4"
   },
   "keywords": [
-    "imagemagick",
-    "wasm",
     "svg",
     "png",
-    "convert"
+    "unicode",
+    "international",
+    "fonts",
+    "arabic",
+    "hebrew",
+    "cjk",
+    "emoji",
+    "wasm",
+    "rendering",
+    "converter"
+  ],
+  "files": [
+    "src/",
+    "examples/",
+    "README.md"
   ],
   "author": "",
   "license": "MIT"
