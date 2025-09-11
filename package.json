@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node main.js",
-    "canvaskit": "node canvaskit-main.js"
+    "experimental": "node experimental-main.js"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "^2.6.2",
