@@ -1,4 +1,4 @@
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import opentype from 'opentype.js';
 import { base64svg } from './base64Img.js';
@@ -182,7 +182,12 @@ const processedSvg = originalSvg.replace(textMatch[0], textPaths);
 const resvg = new Resvg(processedSvg);
 const pngBuffer = resvg.render().asPng();
 
+// Create output directory if it doesn't exist
+if (!existsSync('output')) {
+    mkdirSync('output');
+}
+
 // Save result
-writeFileSync('output.png', pngBuffer);
+writeFileSync('output/output.png', pngBuffer);
 console.log(`✅ Simplified rendering complete! Size: ${(pngBuffer.length/1024).toFixed(2)}KB`);
-console.log('📊 Saved as: output.png');
+console.log('📊 Saved as: output/output.png');

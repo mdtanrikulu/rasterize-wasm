@@ -1,4 +1,4 @@
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import opentype from 'opentype.js';
 import { base64svg } from './base64Img.js';
@@ -548,8 +548,13 @@ const resvg = new Resvg(processedSvg, resvgOptions);
 const pngData = resvg.render();
 const pngBuffer = pngData.asPng();
 
+// Create output directory if it doesn't exist
+if (!existsSync('output')) {
+    mkdirSync('output');
+}
+
 // Save results
-writeFileSync('output.png', pngBuffer);
+writeFileSync('output/experimental-output.png', pngBuffer);
 console.log(`🎖️ Hybrid military-grade rendering complete! Size: ${(pngBuffer.length/1024).toFixed(2)}KB`);
 console.log('📊 Features: Original design preserved + Military Unicode support');
 console.log('✅ Direct SVG-to-PNG processing (no intermediate files)');
