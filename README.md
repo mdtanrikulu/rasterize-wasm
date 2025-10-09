@@ -73,6 +73,38 @@ Every other solution either:
 
 This one actually works.
 
+## cloudflare workers
+
+WASM is bundled locally. For Workers, pass the WASM buffer:
+
+```javascript
+import wasmBuffer from './node_modules/rasterize-wasm/wasm/resvg.wasm';
+import { UniversalSVGRenderer } from 'rasterize-wasm';
+
+export default {
+  async fetch(request, env) {
+    const renderer = new UniversalSVGRenderer();
+    const svg = await request.text();
+
+    // Pass WASM buffer through render options
+    const png = await renderer.render(svg, {
+      buffer: true,
+      wasmBuffer: wasmBuffer
+    });
+
+    return new Response(png, {
+      headers: { 'Content-Type': 'image/png' }
+    });
+  }
+}
+```
+
+Make sure your `wrangler.toml` has:
+```toml
+[build]
+upload.format = "modules"
+```
+
 ## run examples
 
 ```bash
