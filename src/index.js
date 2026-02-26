@@ -50,11 +50,9 @@ export class UniversalSVGRenderer {
                 // Use fallback only when no primary font
                 const effectiveFallback = primaryFont ? null : fallbackFont;
 
-                // Build GSUB substitution map for font-feature-settings (e.g. ss01, ss03)
+                // Extract font-feature-settings as a HarfBuzz feature string (e.g. "ss01,ss03")
                 const fontFeatures = extractFontFeatures(svgString);
-                const glyphSubMap = primaryFont
-                    ? FontLoader.buildSubstitutionMap(primaryFont, fontFeatures)
-                    : new Map();
+                const featureString = fontFeatures.join(',');
 
                 // Step 4: Generate text paths for all elements in parallel
                 const pathResults = await Promise.all(
@@ -62,7 +60,7 @@ export class UniversalSVGRenderer {
                         const { fontSize, fill, fontWeight, x, y } = attributes;
                         return generateTextPaths(
                             textContent, x, y, fontSize, fill, primaryFont, internationalFonts, effectiveFallback,
-                            { enableEmoji: this.options.enableEmoji, fontWeight, glyphSubMap }
+                            { enableEmoji: this.options.enableEmoji, fontWeight, featureString }
                         );
                     })
                 );

@@ -1,7 +1,26 @@
 /**
- * Font loading and management
+ * Font loading and management (harfbuzzjs backend)
  */
-import opentype from 'opentype.js';
+import hbPromise from 'harfbuzzjs';
+
+let _hb = null;
+
+async function getHb() {
+    if (!_hb) _hb = await hbPromise;
+    return _hb;
+}
+
+/**
+ * Create a harfbuzzjs font from an ArrayBuffer.
+ * Returns { hbFont, hbFace, hbBlob, upem } or null on failure.
+ */
+async function createHbFont(arrayBuffer) {
+    const hb = await getHb();
+    const blob = hb.createBlob(arrayBuffer);
+    const face = hb.createFace(blob, 0);
+    const font = hb.createFont(face);
+    return { hbFont: font, hbFace: face, hbBlob: blob, upem: face.upem };
+}
 
 export class FontLoader {
     static _fontCache = new Map();
@@ -19,7 +38,9 @@ export class FontLoader {
             `https://fonts.googleapis.com/css2?family=${encodeURIComponent(familyParam)}:wght@${weight}&display=swap`,
             {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:27.0) Gecko/20100101 Firefox/27.0'
+                    // Safari UA returns truetype (TTF) format, which harfbuzzjs can parse.
+                    // Firefox/Chrome UAs return WOFF/WOFF2, which harfbuzzjs cannot decompress.
+                    'User-Agent': 'Safari/604.1'
                 }
             }
         );
@@ -34,17 +55,18 @@ export class FontLoader {
         if (!fontResponse.ok) return null;
 
         const fontBuffer = await fontResponse.arrayBuffer();
-        const font = opentype.parse(fontBuffer);
-        this._fontCache.set(cacheKey, font);
-        return font;
+        const fontObj = await createHbFont(fontBuffer);
+        if (!fontObj) return null;
+        this._fontCache.set(cacheKey, fontObj);
+        return fontObj;
     }
 
     static async loadPrimaryFont(fontBuffer) {
         if (!fontBuffer) return null;
-        
+
         try {
-            const font = opentype.parse(fontBuffer.buffer);
-            return font;
+            // fontBuffer is a Node Buffer — use its underlying ArrayBuffer
+            return await createHbFont(fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength));
         } catch (error) {
             console.warn('Failed to load primary font:', error.message);
             return null;
@@ -105,41 +127,6 @@ export class FontLoader {
         return this.CJK_REGEX.test(char);
     }
 
-    /**
-     * Build a glyph substitution map from GSUB for the given feature tags.
-     * Returns a Map<defaultGlyphIndex, alternateGlyphIndex>.
-     */
-    static buildSubstitutionMap(font, featureTags) {
-        const map = new Map();
-        const gsub = font?.tables?.gsub;
-        if (!gsub || featureTags.length === 0) return map;
-
-        for (const tag of featureTags) {
-            const feat = gsub.features.find(f => f.tag === tag);
-            if (!feat) continue;
-
-            for (const lookupIdx of feat.feature.lookupListIndexes) {
-                const lookup = gsub.lookups[lookupIdx];
-                // Only handle type 1 (single substitution)
-                if (lookup.lookupType !== 1) continue;
-
-                for (const subtable of lookup.subtables) {
-                    const glyphs = subtable.coverage?.glyphs;
-                    const substitute = subtable.substitute;
-                    if (!glyphs || !substitute) continue;
-
-                    for (let i = 0; i < glyphs.length; i++) {
-                        if (substitute[i] != null) {
-                            map.set(glyphs[i], substitute[i]);
-                        }
-                    }
-                }
-            }
-        }
-
-        return map;
-    }
-
     static async loadInternationalFonts(text, weight = 700) {
         const fontMap = new Map();
 
@@ -174,5 +161,12 @@ export class FontLoader {
         }
 
         return fontMap;
+    }
+
+    /**
+     * Get the harfbuzzjs instance (for shaping in text-processor)
+     */
+    static async getHb() {
+        return getHb();
     }
 }
