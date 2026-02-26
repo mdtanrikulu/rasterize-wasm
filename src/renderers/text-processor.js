@@ -246,7 +246,7 @@ function shapeAndRender(hb, fontObj, text, x, y, fontSize, fill, featureString) 
 }
 
 export async function generateTextPaths(text, x, y, fontSize, fill, primaryFont, internationalFonts, fallbackFont, options = {}) {
-    const { enableEmoji = true, fontWeight = 700, featureString = '' } = options;
+    const { enableEmoji = true, fontWeight = 700, featureString = '', textAnchor = 'start' } = options;
     const hb = await FontLoader.getHb();
     const parts = [];
     let currentX = x;
@@ -301,5 +301,10 @@ export async function generateTextPaths(text, x, y, fontSize, fill, primaryFont,
         }
     }
 
-    return parts.join('');
+    const content = parts.join('');
+    if (textAnchor === 'start') return content;
+
+    const totalWidth = currentX - x;
+    const offset = textAnchor === 'middle' ? -totalWidth / 2 : -totalWidth;
+    return `<g transform="translate(${offset}, 0)">${content}</g>`;
 }

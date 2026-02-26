@@ -32,6 +32,7 @@ function parseTextElement(fullMatch, contentMatch) {
     const fill = attr(fullMatch, 'fill') || 'white';
     const fontWeightRaw = attr(fullMatch, 'font-weight');
     let fontWeight = normalizeFontWeight(fontWeightRaw);
+    const textAnchor = attr(fullMatch, 'text-anchor') || 'start';
     let x = parseFloat(attr(fullMatch, 'x') || '70');
     let y = parseFloat(attr(fullMatch, 'y') || '446');
 
@@ -62,6 +63,7 @@ function parseTextElement(fullMatch, contentMatch) {
             fontSize: styleFontSize || fontSizeVal,
             fill: styleFill || fill,
             fontWeight: styleFontWeight || fontWeight,
+            textAnchor,
             x,
             y
         }

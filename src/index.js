@@ -57,10 +57,10 @@ export class UniversalSVGRenderer {
                 // Step 4: Generate text paths for all elements in parallel
                 const pathResults = await Promise.all(
                     textEntries.map(({ textContent, attributes }) => {
-                        const { fontSize, fill, fontWeight, x, y } = attributes;
+                        const { fontSize, fill, fontWeight, textAnchor, x, y } = attributes;
                         return generateTextPaths(
                             textContent, x, y, fontSize, fill, primaryFont, internationalFonts, effectiveFallback,
-                            { enableEmoji: this.options.enableEmoji, fontWeight, featureString }
+                            { enableEmoji: this.options.enableEmoji, fontWeight, featureString, textAnchor }
                         );
                     })
                 );
