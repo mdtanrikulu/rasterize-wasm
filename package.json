@@ -12,7 +12,6 @@
   },
   "scripts": {
     "start": "node dev/main.js",
-    "experimental": "node dev/experimental-main.js",
     "example": "node examples/usage.js",
     "test": "node examples/usage.js"
   },
@@ -41,5 +40,6 @@
     "README.md"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "packageManager": "yarn@4.12.0"
 }
