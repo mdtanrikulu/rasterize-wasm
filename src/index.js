@@ -4,7 +4,7 @@
  */
 import { detectAndConvert } from './adapters/input.js';
 import { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
-import { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement } from './utils/svg-parser.js';
+import { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
 import { FontLoader } from './renderers/font-loader.js';
 import { generateTextPaths } from './renderers/text-processor.js';
 import { SVGRenderer } from './renderers/svg-renderer.js';
@@ -42,19 +42,17 @@ export class UniversalSVGRenderer {
                 const [primaryFont, internationalFonts, fallbackFont] = await Promise.all([
                     FontLoader.loadPrimaryFont(embeddedFontBuffer),
                     this.options.enableInternationalFonts
-                        ? FontLoader.loadInternationalFonts(allText, dominantWeight)
+                        ? FontLoader.loadInternationalFonts(allText)
                         : Promise.resolve(new Map()),
-                    FontLoader.loadFallbackFont(this.options.fallbackFont, dominantWeight)
+                    FontLoader.loadFallbackFont(this.options.fallbackFont)
                 ]);
 
                 // Use fallback only when no primary font
                 const effectiveFallback = primaryFont ? null : fallbackFont;
 
-                // Build GSUB substitution map for font-feature-settings (e.g. ss01, ss03)
+                // Extract font-feature-settings as a HarfBuzz feature string (e.g. "ss01,ss03")
                 const fontFeatures = extractFontFeatures(svgString);
-                const glyphSubMap = primaryFont
-                    ? FontLoader.buildSubstitutionMap(primaryFont, fontFeatures)
-                    : new Map();
+                const featureString = fontFeatures.join(',');
 
                 // Step 4: Generate text paths for all elements in parallel
                 const pathResults = await Promise.all(
@@ -62,7 +60,7 @@ export class UniversalSVGRenderer {
                         const { fontSize, fill, fontWeight, x, y } = attributes;
                         return generateTextPaths(
                             textContent, x, y, fontSize, fill, primaryFont, internationalFonts, effectiveFallback,
-                            { enableEmoji: this.options.enableEmoji, fontWeight, glyphSubMap }
+                            { enableEmoji: this.options.enableEmoji, fontWeight, featureString }
                         );
                     })
                 );
@@ -73,12 +71,15 @@ export class UniversalSVGRenderer {
                 }
             }
 
-            // Step 6: Render SVG to PNG
+            // Step 6: Optimize filters for faster rendering
+            processedSvg = optimizeFilters(processedSvg);
+
+            // Step 7: Render SVG to PNG
             const pngBuffer = await SVGRenderer.renderSVGToPNG(processedSvg, {
                 wasmBuffer: this.options.wasmBuffer
             });
 
-            // Step 7: Return in requested format(s)
+            // Step 8: Return in requested format(s)
             return this._handleOutput(pngBuffer, outputOptions);
 
         } catch (error) {
@@ -117,7 +118,7 @@ export class UniversalSVGRenderer {
 // Export individual components for advanced usage
 export { detectAndConvert, fromRawSVG, fromBase64, fromBuffer } from './adapters/input.js';
 export { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
-export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement } from './utils/svg-parser.js';
+export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
 export { FontLoader } from './renderers/font-loader.js';
 export { generateTextPaths, segmentGraphemes, isEmoji, loadEmojiSvg, applyRTLProcessing } from './renderers/text-processor.js';
 export { SVGRenderer } from './renderers/svg-renderer.js';

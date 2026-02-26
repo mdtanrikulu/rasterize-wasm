@@ -111,3 +111,21 @@ export function extractFontFeatures(svgString) {
 export function replaceTextElement(svgString, textElement, replacementContent) {
     return svgString.replace(textElement, replacementContent);
 }
+
+/**
+ * Optimize SVG filters for faster resvg rendering.
+ * Converts filterUnits="userSpaceOnUse" to "objectBoundingBox" which is
+ * dramatically faster in resvg (~66x for feDropShadow) and removes absolute
+ * dimension attributes that are invalid for objectBoundingBox coordinates.
+ */
+export function optimizeFilters(svgString) {
+    return svgString.replace(
+        /<filter\b([^>]*)\bfilterUnits\s*=\s*["']userSpaceOnUse["']([^>]*)>/g,
+        (match, before, after) => {
+            // Switch to objectBoundingBox and strip absolute x/y/width/height
+            let attrs = before + after;
+            attrs = attrs.replace(/\s*(?:x|y|width|height)\s*=\s*["'][^"']*["']/g, '');
+            return `<filter${attrs} filterUnits="objectBoundingBox">`;
+        }
+    );
+}

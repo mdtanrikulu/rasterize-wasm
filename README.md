@@ -6,7 +6,8 @@ Universal SVG to PNG renderer that works with international text, emojis, and co
 
 - Converts SVG to PNG using WASM (works in Cloudflare Workers)
 - Handles CJK characters, Arabic, Hebrew, emojis, basically any Unicode
-- Loads fonts dynamically from Google Fonts when needed
+- All fonts bundled locally, no network requests
+- Text shaping with harfbuzzjs (GSUB, ligatures, RTL)
 - Fallback font system so text never disappears
 - No server dependencies, no Canvas API
 
@@ -35,6 +36,12 @@ const base64 = await renderer.render(svgString, { format: 'base64', dataURL: tru
 
 ## examples
 
+| SVG Input | PNG Output |
+|:---------:|:----------:|
+| <img src="examples/assets/multi-script.svg" width="270" /> | <img src="examples/output/example2.png" width="270" /> |
+| <img src="examples/assets/ens-japanese.svg" width="270" /> | <img src="examples/output/example5.png" width="270" /> |
+| <img src="examples/assets/tanrikulu.eth.svg" width="270" /> | <img src="examples/output/example4-file.png" width="270" /> |
+
 ```javascript
 // basic text
 const svg = `<svg width="200" height="100">
@@ -43,7 +50,7 @@ const svg = `<svg width="200" height="100">
 
 // custom fallback font
 const renderer = new UniversalSVGRenderer({
-  fallbackFont: 'Satoshi' // uses Noto Sans if not available on Google Fonts
+  fallbackFont: 'Noto+Sans'
 });
 
 // multiple outputs at once
@@ -57,10 +64,11 @@ const results = await renderer.render(svg, {
 ## how it works
 
 1. extracts text from SVG
-2. loads embedded fonts or downloads from Google Fonts
-3. converts text to SVG paths using opentype.js
-4. replaces original text with paths
-5. renders final SVG to PNG with resvg-wasm
+2. loads embedded fonts or bundled Noto Sans fallbacks
+3. shapes text with harfbuzzjs (handles RTL, ligatures, GSUB features)
+4. converts shaped glyphs to SVG paths
+5. replaces original text elements with paths
+6. renders final SVG to PNG with resvg-wasm
 
 ## why this exists
 
@@ -68,7 +76,7 @@ Every other solution either:
 - doesn't handle international text
 - requires system fonts
 - needs Canvas API
-- breaks on emojis, especially on compound emojis
+- breaks on emojis, especially compound emojis (ZWJ sequences, flags, keycaps)
 - doesn't work in Workers
 
 This one actually works.

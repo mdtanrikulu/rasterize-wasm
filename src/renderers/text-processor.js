@@ -1,7 +1,28 @@
 /**
- * Text processing and path generation
+ * Text processing and path generation (harfbuzzjs backend)
  */
 import { FontLoader } from './font-loader.js';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { decompress } from '../utils/decompress.js';
+
+const __dirname = join(fileURLToPath(import.meta.url), '..');
+const FONTS_DIR = join(__dirname, '../../fonts');
+
+let _emojiMap;
+let _emojiMapPromise;
+async function _getEmojiMap() {
+    if (_emojiMap) return _emojiMap;
+    if (_emojiMapPromise) return _emojiMapPromise;
+    _emojiMapPromise = (async () => {
+        const br = readFileSync(join(FONTS_DIR, 'twemoji.json.br'));
+        const raw = await decompress(br);
+        _emojiMap = JSON.parse(Buffer.from(raw).toString());
+        return _emojiMap;
+    })();
+    return _emojiMapPromise;
+}
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
@@ -11,28 +32,44 @@ export function segmentGraphemes(text) {
 
 export function isEmoji(grapheme) {
     const cp = grapheme.codePointAt(0);
-    // Regional indicator symbols (flags): U+1F1E0-U+1F1FF
+    // Regional indicator symbols (flags)
     if (cp >= 0x1F1E0 && cp <= 0x1F1FF) return true;
-    // Common emoji ranges
+    // Common emoji ranges (emoticons, symbols, etc.)
     if (cp >= 0x1F000) return true;
-    // ZWJ sequences start with a character in emoji range — checked by first codepoint
-    // Keycap sequences, etc.
+    // Dingbats, misc symbols
     if (cp >= 0x2600 && cp <= 0x27BF) return true;
-    // Misc symbols
+    // Misc technical (hourglass, watch, etc.)
     if (cp >= 0x2300 && cp <= 0x23FF) return true;
+    // Supplemental arrows, misc symbols (⭐, ⬛, etc.)
+    if (cp >= 0x2B00 && cp <= 0x2BFF) return true;
+    // Arrows, math operators with emoji presentation
+    if (cp >= 0x2190 && cp <= 0x21FF) return true;
+    // Enclosed alphanumerics (Ⓜ, etc.)
+    if (cp >= 0x24C2 && cp <= 0x24FF) return true;
+    // Geometric shapes (▪, ▫, etc.)
+    if (cp >= 0x25A0 && cp <= 0x25FF) return true;
+    // Keycap sequences: digit/# /asterisk + VS16 + U+20E3
+    if (grapheme.includes('\u20E3')) return true;
+    // copyright ©, registered ®, trademark ™ with VS16
+    if ((cp === 0x00A9 || cp === 0x00AE || cp === 0x2122) && grapheme.includes('\uFE0F')) return true;
     return false;
 }
 
 export async function loadEmojiSvg(grapheme) {
-    // Build Twemoji filename: dash-separated hex codepoints, excluding VS16 (U+FE0F)
-    const codepoints = [...grapheme]
+    // Build key with FE0F kept (jdecked/twemoji uses FE0F in filenames for ZWJ sequences)
+    const allCodepoints = [...grapheme]
+        .map(c => c.codePointAt(0))
+        .map(cp => cp.toString(16).toLowerCase());
+    const withFE0F = allCodepoints.join('-');
+    // Also build a fallback without FE0F for simple emoji
+    const withoutFE0F = [...grapheme]
         .map(c => c.codePointAt(0))
         .filter(cp => cp !== 0xFE0F)
-        .map(cp => cp.toString(16).toLowerCase());
-    const filename = codepoints.join('-');
+        .map(cp => cp.toString(16).toLowerCase())
+        .join('-');
     try {
-        const response = await fetch(`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${filename}.svg`);
-        return response.ok ? await response.text() : null;
+        const map = await _getEmojiMap();
+        return map[withFE0F] || (withFE0F !== withoutFE0F ? map[withoutFE0F] : null) || null;
     } catch {
         return null;
     }
@@ -53,7 +90,6 @@ export function applyRTLProcessing(text) {
 
     if (!hasRTL) return chars;
 
-    // Simple RTL: reverse RTL segments (Arabic + Hebrew), keep LTR segments in order
     let segments = [];
     let currentSegment = { chars: [], isRTL: false };
 
@@ -73,7 +109,6 @@ export function applyRTLProcessing(text) {
         segments.push(currentSegment);
     }
 
-    // Reverse RTL segments
     const processedChars = [];
     for (const segment of segments) {
         if (segment.isRTL) {
@@ -87,7 +122,6 @@ export function applyRTLProcessing(text) {
 }
 
 function resolveInternationalFont(char, internationalFonts) {
-    // Support both Map (new multi-font API) and single font object (backward compat)
     if (!internationalFonts) return null;
     if (!(internationalFonts instanceof Map)) return internationalFonts;
 
@@ -97,91 +131,173 @@ function resolveInternationalFont(char, internationalFonts) {
 }
 
 /**
- * Pre-fetch all emoji SVGs in parallel. Returns a Map<grapheme, svgString|null>.
+ * Pre-fetch all emoji SVGs in parallel.
  */
 async function prefetchEmoji(chars) {
     const emojiChars = chars.filter(c => c !== '\n' && c !== '\r' && isEmoji(c));
     if (emojiChars.length === 0) return new Map();
 
-    // Deduplicate
     const unique = [...new Set(emojiChars)];
-    const results = await Promise.all(unique.map(async (char) => {
-        const svg = await loadEmojiSvg(char);
-        return [char, svg];
-    }));
+    const results = await Promise.all(unique.map(char => loadEmojiSvg(char)));
+    return new Map(unique.map((char, i) => [char, results[i]]));
+}
 
-    return new Map(results);
+/**
+ * Segment text into runs by font (emoji, international, primary, fallback).
+ * Each run is { type: 'emoji'|'text'|'fallback', chars: string, font: fontObj|null, graphemes: [] }
+ */
+function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji) {
+    const runs = [];
+    let currentRun = null;
+
+    function pushRun() {
+        if (currentRun && currentRun.chars.length > 0) {
+            runs.push(currentRun);
+        }
+        currentRun = null;
+    }
+
+    for (const grapheme of graphemes) {
+        if (grapheme === '\n' || grapheme === '\r') {
+            pushRun();
+            runs.push({ type: 'newline', chars: grapheme, font: null, graphemes: [grapheme] });
+            continue;
+        }
+
+        // Check for emoji
+        if (enableEmoji && isEmoji(grapheme) && emojiCache.has(grapheme) && emojiCache.get(grapheme)) {
+            pushRun();
+            runs.push({ type: 'emoji', chars: grapheme, font: null, graphemes: [grapheme], emojiSvg: emojiCache.get(grapheme) });
+            continue;
+        }
+
+        // Determine which font to use
+        const scriptFont = resolveInternationalFont(grapheme, internationalFonts);
+        let font = scriptFont || primaryFont;
+        if (!font && fallbackFont) font = fallbackFont;
+
+        if (!font) {
+            // No font available — use <text> fallback
+            pushRun();
+            runs.push({ type: 'fallback', chars: grapheme, font: null, graphemes: [grapheme] });
+            continue;
+        }
+
+        // Continue current text run if same font
+        if (currentRun && currentRun.type === 'text' && currentRun.font === font) {
+            currentRun.chars += grapheme;
+            currentRun.graphemes.push(grapheme);
+        } else {
+            pushRun();
+            currentRun = { type: 'text', chars: grapheme, font, graphemes: [grapheme] };
+        }
+    }
+
+    pushRun();
+    return runs;
+}
+
+/**
+ * Shape a text run with HarfBuzz and return SVG path fragments.
+ */
+function shapeAndRender(hb, fontObj, text, x, y, fontSize, fill, featureString) {
+    const { hbFont, upem } = fontObj;
+    const scale = fontSize / upem;
+    const parts = [];
+    let currentX = x;
+
+    const buffer = hb.createBuffer();
+    try {
+        buffer.addText(text);
+        buffer.guessSegmentProperties();
+
+        if (featureString) {
+            hb.shape(hbFont, buffer, featureString);
+        } else {
+            hb.shape(hbFont, buffer);
+        }
+
+        const glyphs = buffer.json();
+
+        for (const glyph of glyphs) {
+            const glyphId = glyph.g;
+            const xAdvance = glyph.ax * scale;
+            const xOffset = glyph.dx * scale;
+            const yOffset = glyph.dy * scale;
+
+            if (glyphId !== 0) {
+                const pathData = hbFont.glyphToPath(glyphId);
+                if (pathData) {
+                    // font.glyphToPath returns path in font units, Y-up.
+                    // Apply transform: translate to position, scale to fontSize, flip Y.
+                    const gx = currentX + xOffset;
+                    const gy = y - yOffset;
+                    parts.push(`<path d="${pathData}" transform="translate(${gx},${gy}) scale(${scale},${-scale})" fill="${fill}" />`);
+                }
+            }
+
+            currentX += xAdvance;
+        }
+    } finally {
+        buffer.destroy();
+    }
+
+    return { parts, advanceX: currentX - x };
 }
 
 export async function generateTextPaths(text, x, y, fontSize, fill, primaryFont, internationalFonts, fallbackFont, options = {}) {
-    const { enableEmoji = true, fontWeight = 700, glyphSubMap = new Map() } = options;
+    const { enableEmoji = true, fontWeight = 700, featureString = '' } = options;
+    const hb = await FontLoader.getHb();
     const parts = [];
     let currentX = x;
     let currentY = y;
     const lineHeight = fontSize * 1.2;
 
-    const chars = applyRTLProcessing(text);
+    const graphemes = segmentGraphemes(text);
 
-    // Batch-fetch all emoji SVGs upfront in parallel
-    const emojiCache = enableEmoji ? await prefetchEmoji(chars) : new Map();
+    // Batch-fetch all emoji SVGs upfront
+    const emojiCache = enableEmoji ? await prefetchEmoji(graphemes) : new Map();
 
-    for (const char of chars) {
-        // Handle newlines — advance to next line (\r\n counts as one break)
-        if (char === '\n') {
-            currentX = x;
-            currentY += lineHeight;
+    // Segment text into runs by font
+    const runs = segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji);
+
+    for (const run of runs) {
+        if (run.type === 'newline') {
+            if (run.chars === '\n') {
+                currentX = x;
+                currentY += lineHeight;
+            }
             continue;
         }
-        if (char === '\r') continue;
 
-        // Handle emoji (including ZWJ sequences, flags, skin tones)
-        if (enableEmoji && isEmoji(char)) {
-            const emojiSvg = emojiCache.get(char);
-            if (emojiSvg) {
-                const emojiContent = emojiSvg.match(/<svg[^>]*>(.*)<\/svg>/s)?.[1];
-                if (emojiContent) {
-                    const emojiY = currentY - fontSize * 0.75;
-                    parts.push(`<g transform="translate(${currentX}, ${emojiY}) scale(${fontSize/36})">${emojiContent}</g>`);
-                    currentX += fontSize;
-                    continue;
-                }
+        if (run.type === 'emoji') {
+            const emojiContent = run.emojiSvg.match(/<svg[^>]*>(.*)<\/svg>/s)?.[1];
+            if (emojiContent) {
+                const emojiY = currentY - fontSize * 0.75;
+                parts.push(`<g transform="translate(${currentX}, ${emojiY}) scale(${fontSize/36})">${emojiContent}</g>`);
+                currentX += fontSize;
             }
+            continue;
         }
 
-        // Handle international characters — look up per-character font from the map
-        const scriptFont = resolveInternationalFont(char, internationalFonts);
-        let font = scriptFont || primaryFont;
-
-        // Use fallback font if no primary font available
-        if (!font && fallbackFont) {
-            font = fallbackFont;
-        }
-
-        // Use direct glyph API (charToGlyphIndex + glyph.getPath) instead of
-        // font.getPath/font.getAdvanceWidth to avoid opentype.js Bidi/GSUB crash on Arabic fonts.
-        let glyphIndex = font?.charToGlyphIndex?.(char) ?? 0;
-        // Apply GSUB stylistic alternates (ss01, ss03, etc.)
-        if (glyphIndex > 0 && font === primaryFont && glyphSubMap.has(glyphIndex)) {
-            glyphIndex = glyphSubMap.get(glyphIndex);
-        }
-        const glyph = glyphIndex > 0 ? font.glyphs.get(glyphIndex) : null;
-
-        if (glyph) {
-            const scale = fontSize / font.unitsPerEm;
-            const path = glyph.getPath(currentX, currentY, fontSize);
-            const pathData = path.toPathData(2);
-            if (pathData && pathData !== 'M0,0') {
-                parts.push(`<path d="${pathData}" fill="${fill}" />`);
-            }
-            // Always use the glyph's real advance width (handles space, punctuation, etc.)
-            currentX += glyph.advanceWidth * scale;
-        } else {
-            // Multi-tier fallback: emit a <text> element so the character is visible
+        if (run.type === 'fallback') {
+            // No font — emit <text> fallback
+            const char = run.chars;
             const fontFamilyAttr = FontLoader.getFontFamilyCSS(char);
-
             parts.push(`<text x="${currentX}" y="${currentY}" font-family="${fontFamilyAttr}" font-size="${fontSize}" fill="${fill}" font-weight="${fontWeight}">${escapeXml(char)}</text>`);
-
             currentX += FontLoader.isCJK(char) ? fontSize : fontSize * 0.6;
+            continue;
+        }
+
+        if (run.type === 'text') {
+            // Shape with HarfBuzz — features only apply to the primary font
+            const features = (run.font === primaryFont) ? featureString : '';
+            const { parts: shapedParts, advanceX } = shapeAndRender(
+                hb, run.font, run.chars, currentX, currentY, fontSize, fill, features
+            );
+            parts.push(...shapedParts);
+            currentX += advanceX;
+            continue;
         }
     }
 
