@@ -2,47 +2,112 @@
  * SVG parsing utilities
  */
 
-export class SVGParser {
-    static extractTextContent(svgString) {
-        // Updated regex to handle multiline text elements with whitespace and attributes
-        const textMatch = svgString.match(/<text[\s\S]*?>([\s\S]*?)<\/text>/);
-        if (!textMatch) {
-            throw new Error('No text element found in SVG');
-        }
+function stripInnerTags(content) {
+    // Strip inner element tags (e.g. <tspan ...>...</tspan>) keeping only text
+    return content.replace(/<[^>]+>/g, '').trim();
+}
 
-        const textElement = textMatch[0];
-        const textContent = textMatch[1].trim();
+function attr(str, name) {
+    // Match both single- and double-quoted attribute values, with optional spaces around =
+    const m = str.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`));
+    return m?.[1] ?? null;
+}
 
-        // Extract attributes from the full text element
-        const fontSizeMatch = textElement.match(/font-size="(\d+)(?:px)?"/);
-        const fontSize = parseInt(fontSizeMatch?.[1] || '68');
-        const fill = textElement.match(/fill="([^"]+)"/)?.[1] || 'white';
-        const x = parseFloat(textElement.match(/x="([^"]+)"/)?.[1] || '70');
-        const y = parseFloat(textElement.match(/y="([^"]+)"/)?.[1] || '446');
+function parseTranslate(str) {
+    // Extract x, y from transform="translate(x, y)" or translate(x y)
+    const m = str.match(/translate\(\s*([\d.+-]+)[\s,]+([\d.+-]+)\s*\)/);
+    return m ? { tx: parseFloat(m[1]), ty: parseFloat(m[2]) } : null;
+}
 
-        return {
-            textElement,
-            textContent,
-            attributes: { fontSize, fill, x, y }
-        };
+function normalizeFontWeight(raw) {
+    if (!raw) return 400;
+    const w = raw.trim().toLowerCase();
+    const named = { thin: 100, extralight: 200, light: 300, normal: 400, medium: 500, semibold: 600, bold: 700, extrabold: 800, black: 900 };
+    return named[w] || parseInt(w, 10) || 400;
+}
+
+function parseTextElement(fullMatch, contentMatch) {
+    const fontSizeRaw = attr(fullMatch, 'font-size');
+    const fontSizeVal = fontSizeRaw ? parseFloat(fontSizeRaw) : 68;
+    const fill = attr(fullMatch, 'fill') || 'white';
+    const fontWeightRaw = attr(fullMatch, 'font-weight');
+    let fontWeight = normalizeFontWeight(fontWeightRaw);
+    let x = parseFloat(attr(fullMatch, 'x') || '70');
+    let y = parseFloat(attr(fullMatch, 'y') || '446');
+
+    // Apply transform="translate(tx, ty)" offset
+    const transform = attr(fullMatch, 'transform');
+    if (transform) {
+        const t = parseTranslate(transform);
+        if (t) { x += t.tx; y += t.ty; }
     }
 
-    static extractEmbeddedFont(svgString) {
-        const fontDataMatch = svgString.match(/src:\s*url\(data:font\/truetype;base64,([^)]+)\)/);
-        if (!fontDataMatch) {
-            return null;
-        }
-
-        try {
-            const fontBuffer = Buffer.from(fontDataMatch[1], 'base64');
-            return fontBuffer;
-        } catch (error) {
-            console.warn('Failed to extract embedded font:', error.message);
-            return null;
-        }
+    // Also check CSS style attribute for overrides
+    const styleMatch = fullMatch.match(/style=["']([^"']*)["']/);
+    let styleFontSize, styleFill, styleFontWeight;
+    if (styleMatch) {
+        const style = styleMatch[1];
+        const fsMat = style.match(/font-size:\s*(\d+\.?\d*)(?:px)?/);
+        if (fsMat) styleFontSize = parseFloat(fsMat[1]);
+        const fillMat = style.match(/(?:^|;)\s*fill:\s*([^;]+)/);
+        if (fillMat) styleFill = fillMat[1].trim();
+        const fwMat = style.match(/font-weight:\s*([^;]+)/);
+        if (fwMat) styleFontWeight = normalizeFontWeight(fwMat[1]);
     }
 
-    static replaceTextElement(svgString, textElement, replacementContent) {
-        return svgString.replace(textElement, replacementContent);
+    return {
+        textElement: fullMatch,
+        textContent: stripInnerTags(contentMatch),
+        attributes: {
+            fontSize: styleFontSize || fontSizeVal,
+            fill: styleFill || fill,
+            fontWeight: styleFontWeight || fontWeight,
+            x,
+            y
+        }
+    };
+}
+
+export function extractAllTextContent(svgString) {
+    const regex = /<text\b[^>]*>((?:(?!<text\b)[\s\S])*?)<\/text>/g;
+    const results = [];
+    let match;
+    while ((match = regex.exec(svgString)) !== null) {
+        results.push(parseTextElement(match[0], match[1]));
     }
+    return results;
+}
+
+export function extractEmbeddedFont(svgString) {
+    const fontDataMatch = svgString.match(/src:\s*url\(data:(?:font\/(?:truetype|woff2?|opentype)|application\/(?:x-font-ttf|font-woff2?|vnd\.ms-opentype))(?:;[^;)]+)*;base64,([^)]+)\)/);
+    if (!fontDataMatch) {
+        return null;
+    }
+
+    try {
+        const fontBuffer = Buffer.from(fontDataMatch[1], 'base64');
+        return fontBuffer;
+    } catch (error) {
+        console.warn('Failed to extract embedded font:', error.message);
+        return null;
+    }
+}
+
+export function extractFontFeatures(svgString) {
+    const features = [];
+    // Extract each font-feature-settings value (up to the semicolon)
+    const blockRegex = /font-feature-settings:\s*([^;}]+)/g;
+    let block;
+    while ((block = blockRegex.exec(svgString)) !== null) {
+        const tagRegex = /"([a-z0-9]{4})"\s+on/g;
+        let tag;
+        while ((tag = tagRegex.exec(block[1])) !== null) {
+            if (!features.includes(tag[1])) features.push(tag[1]);
+        }
+    }
+    return features;
+}
+
+export function replaceTextElement(svgString, textElement, replacementContent) {
+    return svgString.replace(textElement, replacementContent);
 }

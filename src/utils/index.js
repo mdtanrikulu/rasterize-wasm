@@ -1,4 +1,4 @@
 /**
  * Utility modules for Universal SVG Renderer
  */
-export { SVGParser } from './svg-parser.js';
+export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement } from './svg-parser.js';

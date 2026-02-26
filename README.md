@@ -24,13 +24,13 @@ import { UniversalSVGRenderer } from 'rasterize-wasm';
 const renderer = new UniversalSVGRenderer();
 
 // from SVG string
-const pngBuffer = await renderer.renderToBuffer(svgString);
+const pngBuffer = await renderer.render(svgString);
 
 // to file
-await renderer.renderToFile(svgString, 'output.png');
+await renderer.render(svgString, { format: 'file', path: 'output.png' });
 
 // to base64
-const base64 = await renderer.renderToBase64(svgString, true); // true = data URL
+const base64 = await renderer.render(svgString, { format: 'base64', dataURL: true });
 ```
 
 ## examples
