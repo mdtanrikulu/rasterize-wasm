@@ -25,5 +25,13 @@ __metadata:
   dependencies:
     "@resvg/resvg-wasm": "npm:^2.6.2"
     harfbuzzjs: "npm:^0.10.0"
+    tiny-brotli-dec-wasm: "npm:^1.0.1"
   languageName: unknown
   linkType: soft
+
+"tiny-brotli-dec-wasm@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "tiny-brotli-dec-wasm@npm:1.0.1"
+  checksum: 10c0/9e693a03739dc7c633323f337a3a9eeebdca1e18917f033070b67c970a055732ea598d6fbb675b6cd28bf8a06587ef81f03eda8c848913bdfd3f250c17e832a9
+  languageName: node
+  linkType: hard

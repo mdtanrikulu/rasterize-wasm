@@ -4,7 +4,7 @@
  */
 import { detectAndConvert } from './adapters/input.js';
 import { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
-import { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement } from './utils/svg-parser.js';
+import { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
 import { FontLoader } from './renderers/font-loader.js';
 import { generateTextPaths } from './renderers/text-processor.js';
 import { SVGRenderer } from './renderers/svg-renderer.js';
@@ -42,9 +42,9 @@ export class UniversalSVGRenderer {
                 const [primaryFont, internationalFonts, fallbackFont] = await Promise.all([
                     FontLoader.loadPrimaryFont(embeddedFontBuffer),
                     this.options.enableInternationalFonts
-                        ? FontLoader.loadInternationalFonts(allText, dominantWeight)
+                        ? FontLoader.loadInternationalFonts(allText)
                         : Promise.resolve(new Map()),
-                    FontLoader.loadFallbackFont(this.options.fallbackFont, dominantWeight)
+                    FontLoader.loadFallbackFont(this.options.fallbackFont)
                 ]);
 
                 // Use fallback only when no primary font
@@ -71,12 +71,15 @@ export class UniversalSVGRenderer {
                 }
             }
 
-            // Step 6: Render SVG to PNG
+            // Step 6: Optimize filters for faster rendering
+            processedSvg = optimizeFilters(processedSvg);
+
+            // Step 7: Render SVG to PNG
             const pngBuffer = await SVGRenderer.renderSVGToPNG(processedSvg, {
                 wasmBuffer: this.options.wasmBuffer
             });
 
-            // Step 7: Return in requested format(s)
+            // Step 8: Return in requested format(s)
             return this._handleOutput(pngBuffer, outputOptions);
 
         } catch (error) {
@@ -115,7 +118,7 @@ export class UniversalSVGRenderer {
 // Export individual components for advanced usage
 export { detectAndConvert, fromRawSVG, fromBase64, fromBuffer } from './adapters/input.js';
 export { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
-export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement } from './utils/svg-parser.js';
+export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
 export { FontLoader } from './renderers/font-loader.js';
 export { generateTextPaths, segmentGraphemes, isEmoji, loadEmojiSvg, applyRTLProcessing } from './renderers/text-processor.js';
 export { SVGRenderer } from './renderers/svg-renderer.js';

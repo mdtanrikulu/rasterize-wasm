@@ -2,6 +2,27 @@
  * Text processing and path generation (harfbuzzjs backend)
  */
 import { FontLoader } from './font-loader.js';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { decompress } from '../utils/decompress.js';
+
+const __dirname = join(fileURLToPath(import.meta.url), '..');
+const FONTS_DIR = join(__dirname, '../../fonts');
+
+let _emojiMap;
+let _emojiMapPromise;
+async function _getEmojiMap() {
+    if (_emojiMap) return _emojiMap;
+    if (_emojiMapPromise) return _emojiMapPromise;
+    _emojiMapPromise = (async () => {
+        const br = readFileSync(join(FONTS_DIR, 'twemoji.json.br'));
+        const raw = await decompress(br);
+        _emojiMap = JSON.parse(Buffer.from(raw).toString());
+        return _emojiMap;
+    })();
+    return _emojiMapPromise;
+}
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
@@ -11,22 +32,44 @@ export function segmentGraphemes(text) {
 
 export function isEmoji(grapheme) {
     const cp = grapheme.codePointAt(0);
+    // Regional indicator symbols (flags)
     if (cp >= 0x1F1E0 && cp <= 0x1F1FF) return true;
+    // Common emoji ranges (emoticons, symbols, etc.)
     if (cp >= 0x1F000) return true;
+    // Dingbats, misc symbols
     if (cp >= 0x2600 && cp <= 0x27BF) return true;
+    // Misc technical (hourglass, watch, etc.)
     if (cp >= 0x2300 && cp <= 0x23FF) return true;
+    // Supplemental arrows, misc symbols (⭐, ⬛, etc.)
+    if (cp >= 0x2B00 && cp <= 0x2BFF) return true;
+    // Arrows, math operators with emoji presentation
+    if (cp >= 0x2190 && cp <= 0x21FF) return true;
+    // Enclosed alphanumerics (Ⓜ, etc.)
+    if (cp >= 0x24C2 && cp <= 0x24FF) return true;
+    // Geometric shapes (▪, ▫, etc.)
+    if (cp >= 0x25A0 && cp <= 0x25FF) return true;
+    // Keycap sequences: digit/# /asterisk + VS16 + U+20E3
+    if (grapheme.includes('\u20E3')) return true;
+    // copyright ©, registered ®, trademark ™ with VS16
+    if ((cp === 0x00A9 || cp === 0x00AE || cp === 0x2122) && grapheme.includes('\uFE0F')) return true;
     return false;
 }
 
 export async function loadEmojiSvg(grapheme) {
-    const codepoints = [...grapheme]
+    // Build key with FE0F kept (jdecked/twemoji uses FE0F in filenames for ZWJ sequences)
+    const allCodepoints = [...grapheme]
+        .map(c => c.codePointAt(0))
+        .map(cp => cp.toString(16).toLowerCase());
+    const withFE0F = allCodepoints.join('-');
+    // Also build a fallback without FE0F for simple emoji
+    const withoutFE0F = [...grapheme]
         .map(c => c.codePointAt(0))
         .filter(cp => cp !== 0xFE0F)
-        .map(cp => cp.toString(16).toLowerCase());
-    const filename = codepoints.join('-');
+        .map(cp => cp.toString(16).toLowerCase())
+        .join('-');
     try {
-        const response = await fetch(`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${filename}.svg`);
-        return response.ok ? await response.text() : null;
+        const map = await _getEmojiMap();
+        return map[withFE0F] || (withFE0F !== withoutFE0F ? map[withoutFE0F] : null) || null;
     } catch {
         return null;
     }
@@ -95,12 +138,8 @@ async function prefetchEmoji(chars) {
     if (emojiChars.length === 0) return new Map();
 
     const unique = [...new Set(emojiChars)];
-    const results = await Promise.all(unique.map(async (char) => {
-        const svg = await loadEmojiSvg(char);
-        return [char, svg];
-    }));
-
-    return new Map(results);
+    const results = await Promise.all(unique.map(char => loadEmojiSvg(char)));
+    return new Map(unique.map((char, i) => [char, results[i]]));
 }
 
 /**

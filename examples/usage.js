@@ -24,24 +24,27 @@ async function example1() {
     console.log('Rendered to file:', filePath);
 }
 
-// Example 2: Multiple output formats at once
+// Example 2: Multi-script international text
 async function example2() {
-    console.log('\nExample 2: Multiple output formats');
+    console.log('\nExample 2: Multi-script international text');
+
+    const multiScriptSvg = `<svg width="500" height="440" viewBox="0 0 500 440" xmlns="http://www.w3.org/2000/svg">
+        <rect width="500" height="440" rx="16" fill="#1a1a2e"/>
+        <text x="250" y="50" font-size="20" font-weight="bold" text-anchor="middle" fill="#e94560">Multi-Script Rendering</text>
+        <text x="40" y="100" font-size="20" fill="#eee">Arabic: مرحبا بالعالم</text>
+        <text x="40" y="140" font-size="20" fill="#eee">Hebrew: שלום עולם</text>
+        <text x="40" y="180" font-size="20" fill="#eee">Hindi: नमस्ते दुनिया</text>
+        <text x="40" y="220" font-size="20" fill="#eee">Korean: 안녕하세요 세계</text>
+        <text x="40" y="260" font-size="20" fill="#eee">Chinese: 你好世界</text>
+        <text x="40" y="300" font-size="20" fill="#eee">Tamil: வணக்கம் உலகம்</text>
+        <text x="40" y="340" font-size="20" fill="#eee">Thai: สวัสดีชาวโลก</text>
+        <text x="40" y="380" font-size="20" fill="#eee">Emoji: 🚀🌍👨‍👩‍👧‍👦🇹🇷 1️⃣2️⃣3️⃣ ⭐</text>
+        <text x="40" y="420" font-size="20" fill="#eee">Georgian: გამარჯობა მსოფლიო</text>
+    </svg>`;
 
     const renderer = new UniversalSVGRenderer();
-
-    const results = await renderer.render(base64svg, {
-        buffer: true,
-        base64: true,
-        file: 'output/example2.png',
-        dataURL: true
-    });
-
-    console.log('Results:', {
-        bufferSize: results.buffer?.length,
-        base64Length: results.base64?.length,
-        filePath: results.filePath
-    });
+    const filePath = await renderer.render(multiScriptSvg, { format: 'file', path: 'output/example2.png' });
+    console.log('Multi-script rendered to:', filePath);
 }
 
 // Example 3: Raw SVG input
@@ -70,17 +73,15 @@ async function example4() {
     console.log('ENS domain SVG rendered to:', filePath);
 }
 
-// Example 5: Custom renderer options
+// Example 5: Japanese ENS card (CJK text, no background image)
 async function example5() {
-    console.log('\nExample 5: Custom renderer options');
+    console.log('\nExample 5: Japanese ENS card (東京タワー.eth)');
 
-    const renderer = new UniversalSVGRenderer({
-        enableInternationalFonts: true,
-        enableEmoji: true
-    });
+    const renderer = new UniversalSVGRenderer();
 
-    const buffer = await renderer.render(base64svg);
-    console.log('Custom renderer result size:', buffer.length);
+    const svgContent = readFileSync('examples/assets/ens-japanese.svg', 'utf-8');
+    const filePath = await renderer.render(svgContent, { format: 'file', path: 'output/example5.png' });
+    console.log('Japanese ENS card rendered to:', filePath);
 }
 
 // Run examples
