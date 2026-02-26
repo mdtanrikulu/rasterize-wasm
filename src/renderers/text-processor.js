@@ -146,14 +146,6 @@ async function prefetchEmoji(chars) {
  * Segment text into runs by font (emoji, international, primary, fallback).
  * Each run is { type: 'emoji'|'text'|'fallback', chars: string, font: fontObj|null, graphemes: [] }
  */
-/**
- * Check if a character is script-neutral (space, punctuation, digits).
- * Neutral chars should inherit the font of the surrounding script run.
- */
-function isNeutralChar(grapheme) {
-    return /^[\s\d\p{P}\p{S}]*$/u.test(grapheme) && !/[\u0600-\u06FF\u0590-\u05FF]/.test(grapheme);
-}
-
 function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji) {
     const runs = [];
     let currentRun = null;
@@ -183,12 +175,6 @@ function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont,
         const scriptFont = resolveInternationalFont(grapheme, internationalFonts);
         let font = scriptFont || primaryFont;
         if (!font && fallbackFont) font = fallbackFont;
-
-        // Neutral chars (space, punctuation) inherit the current run's font
-        // so they don't break script runs (important for Arabic/Hebrew shaping)
-        if (!scriptFont && currentRun && currentRun.type === 'text' && isNeutralChar(grapheme)) {
-            font = currentRun.font;
-        }
 
         if (!font) {
             // No font available — use <text> fallback
