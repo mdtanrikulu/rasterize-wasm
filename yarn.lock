@@ -12,6 +12,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"bidi-js@npm:^1.0.3":
+  version: 1.0.3
+  resolution: "bidi-js@npm:1.0.3"
+  dependencies:
+    require-from-string: "npm:^2.0.2"
+  checksum: 10c0/fdddea4aa4120a34285486f2267526cd9298b6e8b773ad25e765d4f104b6d7437ab4ba542e6939e3ac834a7570bcf121ee2cf6d3ae7cd7082c4b5bedc8f271e1
+  languageName: node
+  linkType: hard
+
 "harfbuzzjs@npm:^0.10.0":
   version: 0.10.0
   resolution: "harfbuzzjs@npm:0.10.0"
@@ -24,10 +33,18 @@ __metadata:
   resolution: "rasterize-wasm@workspace:."
   dependencies:
     "@resvg/resvg-wasm": "npm:^2.6.2"
+    bidi-js: "npm:^1.0.3"
     harfbuzzjs: "npm:^0.10.0"
     tiny-brotli-dec-wasm: "npm:^1.0.1"
   languageName: unknown
   linkType: soft
+
+"require-from-string@npm:^2.0.2":
+  version: 2.0.2
+  resolution: "require-from-string@npm:2.0.2"
+  checksum: 10c0/aaa267e0c5b022fc5fd4eef49d8285086b15f2a1c54b28240fdf03599cbd9c26049fee3eab894f2e1f6ca65e513b030a7c264201e3f005601e80c49fb2937ce2
+  languageName: node
+  linkType: hard
 
 "tiny-brotli-dec-wasm@npm:^1.0.1":
   version: 1.0.1

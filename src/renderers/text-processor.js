@@ -6,6 +6,9 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { decompress } from '../utils/decompress.js';
+import bidiFactory from 'bidi-js';
+
+const bidi = bidiFactory();
 
 const __dirname = join(fileURLToPath(import.meta.url), '..');
 const FONTS_DIR = join(__dirname, '../../fonts');
@@ -143,10 +146,37 @@ async function prefetchEmoji(chars) {
 }
 
 /**
+ * Split text into bidi direction runs using the Unicode Bidirectional Algorithm.
+ * Returns array of { text, direction, start, end }.
+ */
+function getBidiRuns(text) {
+    const result = bidi.getEmbeddingLevels(text, 'ltr');
+    const levels = result.levels;
+    const runs = [];
+    let runStart = 0;
+
+    for (let i = 1; i <= text.length; i++) {
+        if (i === text.length || levels[i] !== levels[runStart]) {
+            const level = levels[runStart];
+            runs.push({
+                text: text.slice(runStart, i),
+                direction: level % 2 === 0 ? 'ltr' : 'rtl',
+                start: runStart,
+                end: i
+            });
+            runStart = i;
+        }
+    }
+    return runs;
+}
+
+/**
  * Segment text into runs by font (emoji, international, primary, fallback).
  * Each run is { type: 'emoji'|'text'|'fallback', chars: string, font: fontObj|null, graphemes: [] }
+ * When direction is 'rtl', neutral characters (spaces, punctuation) inherit the
+ * font of the surrounding script run so HarfBuzz can shape the full RTL phrase.
  */
-function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji) {
+function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji, direction) {
     const runs = [];
     let currentRun = null;
 
@@ -176,6 +206,13 @@ function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont,
         let font = scriptFont || primaryFont;
         if (!font && fallbackFont) font = fallbackFont;
 
+        // In RTL bidi runs, neutral chars (spaces, punctuation) inherit the current
+        // run's font so HarfBuzz shapes the full phrase with correct word reordering.
+        if (direction === 'rtl' && !scriptFont && currentRun && currentRun.type === 'text') {
+            const isNeutral = /^[\s\d\p{P}\p{S}]*$/u.test(grapheme);
+            if (isNeutral) font = currentRun.font;
+        }
+
         if (!font) {
             // No font available — use <text> fallback
             pushRun();
@@ -200,7 +237,7 @@ function segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont,
 /**
  * Shape a text run with HarfBuzz and return SVG path fragments.
  */
-function shapeAndRender(hb, fontObj, text, x, y, fontSize, fill, featureString) {
+function shapeAndRender(hb, fontObj, text, x, y, fontSize, fill, featureString, direction) {
     const { hbFont, upem } = fontObj;
     const scale = fontSize / upem;
     const parts = [];
@@ -210,6 +247,7 @@ function shapeAndRender(hb, fontObj, text, x, y, fontSize, fill, featureString) 
     try {
         buffer.addText(text);
         buffer.guessSegmentProperties();
+        if (direction) buffer.setDirection(direction);
 
         if (featureString) {
             hb.shape(hbFont, buffer, featureString);
@@ -253,51 +291,57 @@ export async function generateTextPaths(text, x, y, fontSize, fill, primaryFont,
     let currentY = y;
     const lineHeight = fontSize * 1.2;
 
-    const graphemes = segmentGraphemes(text);
+    // Step 1: Run Unicode Bidirectional Algorithm on the full text
+    const bidiRuns = getBidiRuns(text);
 
     // Batch-fetch all emoji SVGs upfront
-    const emojiCache = enableEmoji ? await prefetchEmoji(graphemes) : new Map();
+    const allGraphemes = segmentGraphemes(text);
+    const emojiCache = enableEmoji ? await prefetchEmoji(allGraphemes) : new Map();
 
-    // Segment text into runs by font
-    const runs = segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji);
+    // Step 2: Process each bidi direction run
+    for (const bidiRun of bidiRuns) {
+        const graphemes = segmentGraphemes(bidiRun.text);
 
-    for (const run of runs) {
-        if (run.type === 'newline') {
-            if (run.chars === '\n') {
-                currentX = x;
-                currentY += lineHeight;
+        // Step 3: Segment by font within this bidi run (neutral chars inherit font in RTL runs)
+        const runs = segmentByFont(graphemes, primaryFont, internationalFonts, fallbackFont, emojiCache, enableEmoji, bidiRun.direction);
+
+        for (const run of runs) {
+            if (run.type === 'newline') {
+                if (run.chars === '\n') {
+                    currentX = x;
+                    currentY += lineHeight;
+                }
+                continue;
             }
-            continue;
-        }
 
-        if (run.type === 'emoji') {
-            const emojiContent = run.emojiSvg.match(/<svg[^>]*>(.*)<\/svg>/s)?.[1];
-            if (emojiContent) {
-                const emojiY = currentY - fontSize * 0.75;
-                parts.push(`<g transform="translate(${currentX}, ${emojiY}) scale(${fontSize/36})">${emojiContent}</g>`);
-                currentX += fontSize;
+            if (run.type === 'emoji') {
+                const emojiContent = run.emojiSvg.match(/<svg[^>]*>(.*)<\/svg>/s)?.[1];
+                if (emojiContent) {
+                    const emojiY = currentY - fontSize * 0.75;
+                    parts.push(`<g transform="translate(${currentX}, ${emojiY}) scale(${fontSize/36})">${emojiContent}</g>`);
+                    currentX += fontSize;
+                }
+                continue;
             }
-            continue;
-        }
 
-        if (run.type === 'fallback') {
-            // No font — emit <text> fallback
-            const char = run.chars;
-            const fontFamilyAttr = FontLoader.getFontFamilyCSS(char);
-            parts.push(`<text x="${currentX}" y="${currentY}" font-family="${fontFamilyAttr}" font-size="${fontSize}" fill="${fill}" font-weight="${fontWeight}">${escapeXml(char)}</text>`);
-            currentX += FontLoader.isCJK(char) ? fontSize : fontSize * 0.6;
-            continue;
-        }
+            if (run.type === 'fallback') {
+                const char = run.chars;
+                const fontFamilyAttr = FontLoader.getFontFamilyCSS(char);
+                parts.push(`<text x="${currentX}" y="${currentY}" font-family="${fontFamilyAttr}" font-size="${fontSize}" fill="${fill}" font-weight="${fontWeight}">${escapeXml(char)}</text>`);
+                currentX += FontLoader.isCJK(char) ? fontSize : fontSize * 0.6;
+                continue;
+            }
 
-        if (run.type === 'text') {
-            // Shape with HarfBuzz — features only apply to the primary font
-            const features = (run.font === primaryFont) ? featureString : '';
-            const { parts: shapedParts, advanceX } = shapeAndRender(
-                hb, run.font, run.chars, currentX, currentY, fontSize, fill, features
-            );
-            parts.push(...shapedParts);
-            currentX += advanceX;
-            continue;
+            if (run.type === 'text') {
+                // Shape with HarfBuzz — pass bidi direction explicitly
+                const features = (run.font === primaryFont) ? featureString : '';
+                const { parts: shapedParts, advanceX } = shapeAndRender(
+                    hb, run.font, run.chars, currentX, currentY, fontSize, fill, features, bidiRun.direction
+                );
+                parts.push(...shapedParts);
+                currentX += advanceX;
+                continue;
+            }
         }
     }
 

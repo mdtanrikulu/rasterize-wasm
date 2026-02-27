@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@resvg/resvg-wasm": "^2.6.2",
+    "bidi-js": "^1.0.3",
     "harfbuzzjs": "^0.10.0",
     "tiny-brotli-dec-wasm": "^1.0.1"
   },
