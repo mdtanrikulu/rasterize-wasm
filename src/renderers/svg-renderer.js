@@ -1,10 +1,8 @@
 /**
  * Core SVG to PNG rendering engine
  */
+import { createRequire } from 'module';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
 export class SVGRenderer {
     static wasmInitialized = false;
@@ -21,6 +19,10 @@ export class SVGRenderer {
                 wasmBytes = wasmBuffer;
             } else {
                 // Load from local file (for Node.js)
+                const require = createRequire(import.meta.url);
+                const { readFileSync } = require('fs');
+                const { fileURLToPath } = require('url');
+                const { dirname, join } = require('path');
                 const __filename = fileURLToPath(import.meta.url);
                 const __dirname = dirname(__filename);
                 const wasmPath = join(__dirname, '../../wasm/resvg.wasm');

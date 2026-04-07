@@ -1,27 +1,65 @@
 /**
  * Text processing and path generation (harfbuzzjs backend)
  */
+import { createRequire } from 'module';
 import { FontLoader } from './font-loader.js';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
 import { decompress } from '../utils/decompress.js';
 import bidiFactory from 'bidi-js';
 
 const bidi = bidiFactory();
 
-const __dirname = join(fileURLToPath(import.meta.url), '..');
-const FONTS_DIR = join(__dirname, '../../fonts');
+let _require;
+function getRequire() {
+    if (!_require) _require = createRequire(import.meta.url);
+    return _require;
+}
+
+let _fontsDir = null;
+function getFontsDir() {
+    if (_fontsDir) return _fontsDir;
+    try {
+        const require = getRequire();
+        const { join } = require('path');
+        const { fileURLToPath } = require('url');
+        _fontsDir = join(fileURLToPath(import.meta.url), '..', '..', '..', 'fonts');
+    } catch {
+        _fontsDir = '/fonts';
+    }
+    return _fontsDir;
+}
 
 let _emojiMap;
 let _emojiMapPromise;
+
+/**
+ * Provide emoji data for environments without filesystem access (e.g. Workers).
+ * Accepts either a pre-parsed map object or a Brotli-compressed buffer.
+ */
+export async function setEmojiData(data) {
+    if (data && typeof data === 'object' && !ArrayBuffer.isView(data) && !(data instanceof ArrayBuffer)) {
+        // Already a parsed map object
+        _emojiMap = data;
+    } else if (data) {
+        // Brotli-compressed buffer — decompress and parse
+        const raw = await decompress(data);
+        _emojiMap = JSON.parse(Buffer.from(raw).toString());
+    }
+}
+
 async function _getEmojiMap() {
     if (_emojiMap) return _emojiMap;
     if (_emojiMapPromise) return _emojiMapPromise;
     _emojiMapPromise = (async () => {
-        const br = readFileSync(join(FONTS_DIR, 'twemoji.json.br'));
-        const raw = await decompress(br);
-        _emojiMap = JSON.parse(Buffer.from(raw).toString());
+        try {
+            const require = getRequire();
+            const { readFileSync } = require('fs');
+            const { join } = require('path');
+            const br = readFileSync(join(getFontsDir(), 'twemoji.json.br'));
+            const raw = await decompress(br);
+            _emojiMap = JSON.parse(Buffer.from(raw).toString());
+        } catch {
+            _emojiMap = {};
+        }
         return _emojiMap;
     })();
     return _emojiMapPromise;

@@ -119,8 +119,9 @@ export class UniversalSVGRenderer {
 export { detectAndConvert, fromRawSVG, fromBase64, fromBuffer } from './adapters/input.js';
 export { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
 export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
-export { FontLoader } from './renderers/font-loader.js';
-export { generateTextPaths, segmentGraphemes, isEmoji, loadEmojiSvg, applyRTLProcessing } from './renderers/text-processor.js';
+export { FontLoader, setHarfBuzzWasm, setFontData } from './renderers/font-loader.js';
+export { setBrotliWasm } from './utils/decompress.js';
+export { generateTextPaths, segmentGraphemes, isEmoji, loadEmojiSvg, applyRTLProcessing, setEmojiData } from './renderers/text-processor.js';
 export { SVGRenderer } from './renderers/svg-renderer.js';
 
 // Export default instance
