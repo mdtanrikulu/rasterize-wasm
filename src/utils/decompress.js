@@ -4,8 +4,19 @@
 import BrotliDec, { Result } from 'tiny-brotli-dec-wasm';
 
 let _initPromise = null;
+let _brotliWasm = null;
+
+/**
+ * Provide pre-compiled brotli WASM module for Workers (where runtime
+ * WebAssembly.compile() is blocked). The module is passed directly to
+ * the BrotliDecompressStream constructor, bypassing BrotliDec.init().
+ */
+export function setBrotliWasm(wasmModule) {
+    _brotliWasm = wasmModule;
+}
 
 async function init() {
+    if (_brotliWasm) return; // Workers path — no init needed
     if (_initPromise) return _initPromise;
     _initPromise = (async () => {
         try {
@@ -21,10 +32,18 @@ async function init() {
     return _initPromise;
 }
 
+function createDecoder() {
+    if (_brotliWasm) {
+        // Workers: instantiate directly with pre-compiled WASM module
+        return new BrotliDec(_brotliWasm);
+    }
+    return BrotliDec.create();
+}
+
 export async function decompress(compressed) {
     await init();
     const input = compressed instanceof Uint8Array ? compressed : new Uint8Array(compressed);
-    const decoder = BrotliDec.create();
+    const decoder = createDecoder();
     const chunks = [];
     let offset = 0;
     const chunkSize = Math.max(input.length * 4, 1024 * 1024);

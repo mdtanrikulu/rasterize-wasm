@@ -1,21 +1,97 @@
 /**
  * Font loading and management (harfbuzzjs backend)
  */
-import hbPromise from 'harfbuzzjs';
-import { readFileSync, existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { createRequire } from 'module';
+import createHarfBuzz from 'harfbuzzjs/hb.js';
+import hbjs from 'harfbuzzjs/hbjs.js';
 import { decompress } from '../utils/decompress.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const FONTS_DIR = join(__dirname, '../../fonts');
+let _require;
+function getRequire() {
+    if (!_require) _require = createRequire(import.meta.url);
+    return _require;
+}
+
+let _fontsDir = null;
+function getFontsDir() {
+    if (_fontsDir) return _fontsDir;
+    try {
+        const require = getRequire();
+        const { fileURLToPath } = require('url');
+        const { dirname, join } = require('path');
+        const __filename = fileURLToPath(import.meta.url);
+        _fontsDir = join(dirname(__filename), '../../fonts');
+    } catch {
+        _fontsDir = '/fonts';
+    }
+    return _fontsDir;
+}
+
+function readFontFile(fontPath) {
+    try {
+        const require = getRequire();
+        const { readFileSync, existsSync } = require('fs');
+        if (!existsSync(fontPath)) return null;
+        return readFileSync(fontPath);
+    } catch {
+        return null;
+    }
+}
 
 let _hb = null;
+let _hbPromise = null;
+let _hbWasmBinary = null;
+
+// Pre-loaded font buffers for Workers (Brotli-compressed .ttf.br data)
+const _fontData = new Map();
+
+/**
+ * Provide the harfbuzzjs WASM binary for environments without filesystem access.
+ */
+export function setHarfBuzzWasm(wasmBinary) {
+    _hbWasmBinary = wasmBinary;
+}
+
+/**
+ * Pre-load a font's Brotli-compressed buffer for Workers (where readFileSync is unavailable).
+ * Call before rendering. fontFamily uses '+' separators (e.g. 'Noto+Sans').
+ */
+export function setFontData(fontFamily, brBuffer) {
+    _fontData.set(fontFamily, brBuffer);
+}
 
 async function getHb() {
-    if (!_hb) _hb = await hbPromise;
-    return _hb;
+    if (_hb) return _hb;
+    if (_hbPromise) return _hbPromise;
+    _hbPromise = (async () => {
+        let wasmBinary = _hbWasmBinary;
+        if (!wasmBinary) {
+            try {
+                const require = getRequire();
+                const { readFileSync } = require('fs');
+                const hbWasmPath = require.resolve('harfbuzzjs/hb.wasm');
+                wasmBinary = readFileSync(hbWasmPath);
+            } catch {}
+        }
+        let moduleArgs;
+        if (wasmBinary && typeof WebAssembly !== 'undefined' && wasmBinary instanceof WebAssembly.Module) {
+            // Pre-compiled WebAssembly.Module (e.g. Cloudflare Workers CompiledWasm)
+            moduleArgs = {
+                instantiateWasm(info, receiveInstance) {
+                    WebAssembly.instantiate(wasmBinary, info).then(inst => {
+                        receiveInstance(inst);
+                    });
+                    return {};
+                }
+            };
+        } else {
+            moduleArgs = wasmBinary ? { wasmBinary } : {};
+        }
+        const instance = await createHarfBuzz(moduleArgs);
+        _hb = hbjs(instance);
+        return _hb;
+    })();
+    return _hbPromise;
 }
 
 /**
@@ -66,10 +142,21 @@ export class FontLoader {
         const filename = LOCAL_FONT_FILES[fontFamily];
         if (!filename) return null;
 
-        const fontPath = join(FONTS_DIR, filename);
-        if (!existsSync(fontPath)) return null;
+        // Check pre-loaded data first (Workers path)
+        let brBuf = _fontData.get(fontFamily) || null;
 
-        const brBuf = readFileSync(fontPath);
+        // Fall back to filesystem (Node.js path)
+        if (!brBuf) {
+            try {
+                const { join } = getRequire()('path');
+                const fontPath = join(getFontsDir(), filename);
+                brBuf = readFontFile(fontPath);
+            } catch {
+                // Workers: getRequire() throws
+            }
+        }
+
+        if (!brBuf) return null;
         const fontBuffer = await decompress(brBuf);
         const fontObj = await createHbFont(fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength));
         this._fontCache.set(cacheKey, fontObj);
@@ -158,6 +245,15 @@ export class FontLoader {
      * Get the harfbuzzjs instance (for shaping in text-processor)
      */
     static async getHb() {
+        return getHb();
+    }
+
+    /**
+     * Force-initialize harfbuzzjs WASM.
+     * Call at module level (top-level await) in Workers to ensure
+     * all WASM compilation happens during the startup phase.
+     */
+    static async warmup() {
         return getHb();
     }
 }
