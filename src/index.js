@@ -5,18 +5,21 @@
 import { detectAndConvert } from './adapters/input.js';
 import { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
 import { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
-import { FontLoader } from './renderers/font-loader.js';
-import { generateTextPaths } from './renderers/text-processor.js';
+import { FontLoader, createHbFont, LOCAL_FONT_FILES } from './renderers/font-loader.js';
+import { generateTextPaths, setEmojiData } from './renderers/text-processor.js';
 import { SVGRenderer } from './renderers/svg-renderer.js';
 
 export class UniversalSVGRenderer {
     constructor(options = {}) {
+        const { _fontRegistry, _fallbackFontObj, ...publicOptions } = options;
         this.options = {
             enableInternationalFonts: true,
             enableEmoji: true,
             fallbackFont: 'Noto+Sans',
-            ...options
+            ...publicOptions
         };
+        this._fontRegistry = _fontRegistry || null;
+        this._fallbackFontObj = _fallbackFontObj || null;
     }
 
     /**
@@ -39,13 +42,25 @@ export class UniversalSVGRenderer {
                 const allText = textEntries.map(e => e.textContent).join('');
                 const dominantWeight = textEntries[0]?.attributes?.fontWeight || 700;
 
-                const [primaryFont, internationalFonts, fallbackFont] = await Promise.all([
-                    FontLoader.loadPrimaryFont(embeddedFontBuffer),
-                    this.options.enableInternationalFonts
-                        ? FontLoader.loadInternationalFonts(allText)
-                        : Promise.resolve(new Map()),
-                    FontLoader.loadFallbackFont(this.options.fallbackFont)
-                ]);
+                let primaryFont, internationalFonts, fallbackFont;
+
+                if (this._fontRegistry) {
+                    // Pre-loaded fonts path (Workers / createRasterizer)
+                    primaryFont = await FontLoader.loadPrimaryFont(embeddedFontBuffer);
+                    internationalFonts = this.options.enableInternationalFonts
+                        ? FontLoader.getInternationalFontsFromRegistry(allText, this._fontRegistry)
+                        : new Map();
+                    fallbackFont = this._fallbackFontObj;
+                } else {
+                    // Filesystem loading path (Node.js / with-fonts)
+                    [primaryFont, internationalFonts, fallbackFont] = await Promise.all([
+                        FontLoader.loadPrimaryFont(embeddedFontBuffer),
+                        this.options.enableInternationalFonts
+                            ? FontLoader.loadInternationalFonts(allText)
+                            : Promise.resolve(new Map()),
+                        FontLoader.loadFallbackFont(this.options.fallbackFont)
+                    ]);
+                }
 
                 // Use fallback only when no primary font
                 const effectiveFallback = primaryFont ? null : fallbackFont;
@@ -115,12 +130,80 @@ export class UniversalSVGRenderer {
     }
 }
 
+/**
+ * Manifest of bundled font and data files.
+ * Consumers (e.g. Workers fetching from R2) can use this to know which
+ * assets to upload and provide at initialization time.
+ */
+export const FONT_MANIFEST = {
+    fonts: { ...LOCAL_FONT_FILES },
+    data: { twemoji: 'twemoji.json.br' },
+};
+
+/**
+ * Create a rasterizer with pre-loaded fonts (no filesystem access needed).
+ *
+ * @param {Object} options
+ * @param {Array<{name: string, weight?: number, data: Uint8Array}>} options.fonts
+ *   Decompressed TTF font bytes. Names use spaces (e.g. 'Noto Sans SC').
+ * @param {Uint8Array|Object} [options.emojiData]
+ *   Decompressed twemoji.json content — Uint8Array of JSON, or pre-parsed object.
+ * @param {boolean} [options.enableEmoji=true]
+ * @param {boolean} [options.enableInternationalFonts=true]
+ * @param {string} [options.fallbackFont='Noto+Sans']
+ * @param {*} [options.wasmBuffer] resvg WASM buffer for Workers
+ * @returns {Promise<UniversalSVGRenderer>}
+ */
+export async function createRasterizer(options = {}) {
+    const {
+        fonts = [],
+        emojiData = null,
+        ...rendererOptions
+    } = options;
+
+    // Create HarfBuzz font objects from provided decompressed TTF bytes
+    const fontRegistry = new Map();
+    for (const fontDef of fonts) {
+        const normalizedName = fontDef.name.replace(/ /g, '+');
+        const data = fontDef.data;
+        const arrayBuffer = data.buffer
+            ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+            : data;
+        const fontObj = await createHbFont(arrayBuffer);
+        fontRegistry.set(normalizedName, fontObj);
+    }
+
+    // Resolve fallback font from registry
+    const fallbackName = (rendererOptions.fallbackFont || 'Noto+Sans').replace(/ /g, '+');
+    const fallbackFontObj = fontRegistry.get(fallbackName) || null;
+
+    // Set emoji data globally if provided
+    if (emojiData) {
+        let emojiMap;
+        if (typeof emojiData === 'string') {
+            emojiMap = JSON.parse(emojiData);
+        } else if (emojiData instanceof Uint8Array || emojiData instanceof ArrayBuffer) {
+            const bytes = emojiData instanceof ArrayBuffer ? new Uint8Array(emojiData) : emojiData;
+            emojiMap = JSON.parse(new TextDecoder().decode(bytes));
+        } else {
+            emojiMap = emojiData;
+        }
+        await setEmojiData(emojiMap);
+    }
+
+    return new UniversalSVGRenderer({
+        ...rendererOptions,
+        _fontRegistry: fontRegistry,
+        _fallbackFontObj: fallbackFontObj,
+    });
+}
+
 // Export individual components for advanced usage
 export { detectAndConvert, fromRawSVG, fromBase64, fromBuffer } from './adapters/input.js';
 export { toBase64, toFile, toMultipleFormats } from './adapters/output.js';
 export { extractAllTextContent, extractEmbeddedFont, extractFontFeatures, replaceTextElement, optimizeFilters } from './utils/svg-parser.js';
-export { FontLoader, setHarfBuzzWasm, setFontData } from './renderers/font-loader.js';
-export { setBrotliWasm } from './utils/decompress.js';
+export { FontLoader, setHarfBuzzWasm, setFontData, createHbFont, LOCAL_FONT_FILES } from './renderers/font-loader.js';
+export { setBrotliWasm, decompress } from './utils/decompress.js';
 export { generateTextPaths, segmentGraphemes, isEmoji, loadEmojiSvg, applyRTLProcessing, setEmojiData } from './renderers/text-processor.js';
 export { SVGRenderer } from './renderers/svg-renderer.js';
 

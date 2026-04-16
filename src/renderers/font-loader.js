@@ -98,7 +98,7 @@ async function getHb() {
  * Create a harfbuzzjs font from an ArrayBuffer.
  * Returns { hbFont, hbFace, hbBlob, upem } or null on failure.
  */
-async function createHbFont(arrayBuffer) {
+export async function createHbFont(arrayBuffer) {
     const hb = await getHb();
     const blob = hb.createBlob(arrayBuffer);
     const face = hb.createFace(blob, 0);
@@ -109,7 +109,7 @@ async function createHbFont(arrayBuffer) {
 /**
  * Map font family names to local gzipped TTF filenames in fonts/ directory.
  */
-const LOCAL_FONT_FILES = {
+export const LOCAL_FONT_FILES = {
     'Noto+Sans':            'noto-sans-bold.ttf.br',
     'Noto+Naskh+Arabic':    'noto-naskh-arabic-bold.ttf.br',
     'Noto+Sans+Hebrew':     'noto-sans-hebrew-bold.ttf.br',
@@ -225,6 +225,22 @@ export class FontLoader {
 
     static isCJK(char) {
         return this.CJK_REGEX.test(char);
+    }
+
+    /**
+     * Look up pre-loaded fonts from a registry Map (for createRasterizer path).
+     * Returns the same Map<scriptEntry, fontObj> shape as loadInternationalFonts.
+     */
+    static getInternationalFontsFromRegistry(text, fontRegistry) {
+        const fontMap = new Map();
+        for (const entry of this.SCRIPT_FONTS) {
+            if (entry.regex.test(text)) {
+                const fontName = entry.fonts[0];
+                const font = fontRegistry.get(fontName);
+                if (font) fontMap.set(entry, font);
+            }
+        }
+        return fontMap;
     }
 
     static async loadInternationalFonts(text) {

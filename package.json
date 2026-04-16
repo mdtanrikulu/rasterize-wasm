@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
+    "./with-fonts": "./src/with-fonts.js",
     "./adapters": "./src/adapters/index.js",
     "./renderers": "./src/renderers/index.js",
     "./utils": "./src/utils/index.js"
