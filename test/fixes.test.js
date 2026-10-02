@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     setHarfBuzzWasm, FontLoader, toBase64, replaceTextElement,
-    extractAllTextContent, optimizeFilters
+    extractAllTextContent, optimizeFilters, loadEmojiSvg, generateTextPaths
 } from '../src/index.js';
 
 // Runs first: HarfBuzz must not be initialized yet
@@ -59,4 +59,24 @@ test('concurrent cold loads share one font', async () => {
     const fonts = await Promise.all([1, 2, 3].map(() => FontLoader._loadLocalFont('Noto+Sans+Hebrew')));
     assert.ok(fonts[0]);
     assert.equal(new Set(fonts).size, 1);
+});
+
+test('emoji resolve when ENS normalization dropped the FE0F their twemoji key has', async () => {
+    const emoji = (hex) => String.fromCodePoint(...hex.split('-').map(h => parseInt(h, 16)));
+    for (const [bare, key] of [
+        ['1f9d9-1f3fb-200d-2642', '1f9d9-1f3fb-200d-2642-fe0f'], // FE0F at the end of the key
+        ['2764-200d-1f525', '2764-fe0f-200d-1f525'],             // FE0F mid-sequence
+        ['1f3f3-200d-1f308', '1f3f3-fe0f-200d-1f308'],
+    ]) {
+        const svg = await loadEmojiSvg(emoji(key));
+        assert.ok(svg, `${key} missing from data`);
+        assert.equal(await loadEmojiSvg(emoji(bare)), svg, bare);
+    }
+    // Existing lookups, with and without FE0F in the input
+    assert.equal(await loadEmojiSvg(emoji('2764-fe0f')), await loadEmojiSvg(emoji('2764')));
+    assert.ok(await loadEmojiSvg(emoji('1f600')));
+
+    const font = await FontLoader.loadFallbackFont('Noto+Sans');
+    const paths = await generateTextPaths('🦊🧙🏻‍♂.eth', 0, 50, 40, 'white', null, new Map(), font, {});
+    assert.equal(paths.match(/<g transform/g)?.length, 2, 'fox and mage should both be drawn');
 });

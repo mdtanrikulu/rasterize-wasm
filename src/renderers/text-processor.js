@@ -9,6 +9,17 @@ const bidi = bidiFactory();
 
 let _emojiMap;
 let _emojiMapPromise;
+// FE0F-free form -> twemoji key; ENS-normalized text (ENSIP-15) drops FE0F that keys keep
+let _emojiKeyByBareForm = new Map();
+
+function useEmojiMap(map) {
+    _emojiMap = map;
+    _emojiKeyByBareForm = new Map();
+    for (const key of Object.keys(map)) {
+        const bare = key.replace(/-fe0f/g, '');
+        if (!_emojiKeyByBareForm.has(bare)) _emojiKeyByBareForm.set(bare, key);
+    }
+}
 
 /**
  * Provide emoji data for environments without filesystem access (e.g. Workers).
@@ -17,11 +28,11 @@ let _emojiMapPromise;
 export async function setEmojiData(data) {
     if (data && typeof data === 'object' && !ArrayBuffer.isView(data) && !(data instanceof ArrayBuffer)) {
         // Already a parsed map object
-        _emojiMap = data;
+        useEmojiMap(data);
     } else if (data) {
         // Brotli-compressed buffer — decompress and parse
         const raw = await decompress(data);
-        _emojiMap = JSON.parse(Buffer.from(raw).toString());
+        useEmojiMap(JSON.parse(Buffer.from(raw).toString()));
     }
 }
 
@@ -31,9 +42,9 @@ async function _getEmojiMap() {
     _emojiMapPromise = (async () => {
         try {
             const raw = await decompress(readBundledFile('twemoji.json.br'));
-            _emojiMap = JSON.parse(Buffer.from(raw).toString());
+            useEmojiMap(JSON.parse(Buffer.from(raw).toString()));
         } catch {
-            _emojiMap = {};
+            useEmojiMap({});
         }
         return _emojiMap;
     })();
@@ -74,9 +85,10 @@ export function isEmoji(grapheme) {
 export async function loadEmojiSvg(grapheme) {
     // Build key with FE0F kept (jdecked/twemoji uses FE0F in filenames for ZWJ sequences)
     const codepoints = [...grapheme].map(c => c.codePointAt(0).toString(16));
-    // Fall back to the key without FE0F for simple emoji
+    const bare = codepoints.filter(cp => cp !== 'fe0f').join('-');
     const map = await _getEmojiMap();
-    return map[codepoints.join('-')] || map[codepoints.filter(cp => cp !== 'fe0f').join('-')] || null;
+    // Exact key, then without FE0F (simple emoji), then the key that has FE0F where the text has none
+    return map[codepoints.join('-')] || map[bare] || map[_emojiKeyByBareForm.get(bare)] || null;
 }
 
 function escapeXml(str) {
