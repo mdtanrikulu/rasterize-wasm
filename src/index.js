@@ -70,15 +70,25 @@ export class UniversalSVGRenderer {
                 const featureString = fontFeatures.join(',');
 
                 // Step 4: Generate text paths for all elements in parallel
-                const pathResults = await Promise.all(
-                    textEntries.map(({ textContent, attributes }) => {
-                        const { fontSize, fill, fontWeight, textAnchor, x, y } = attributes;
-                        return generateTextPaths(
-                            textContent, x, y, fontSize, fill, primaryFont, internationalFonts, effectiveFallback,
-                            { enableEmoji: this.options.enableEmoji, fontWeight, featureString, textAnchor }
-                        );
-                    })
-                );
+                let pathResults;
+                try {
+                    pathResults = await Promise.all(
+                        textEntries.map(({ textContent, attributes }) => {
+                            const { fontSize, fill, fontWeight, textAnchor, x, y } = attributes;
+                            return generateTextPaths(
+                                textContent, x, y, fontSize, fill, primaryFont, internationalFonts, effectiveFallback,
+                                { enableEmoji: this.options.enableEmoji, fontWeight, featureString, textAnchor }
+                            );
+                        })
+                    );
+                } finally {
+                    // The embedded font is per-render; free its HarfBuzz heap copy and draw callbacks
+                    if (primaryFont) {
+                        primaryFont.hbFont.destroy();
+                        primaryFont.hbFace.destroy();
+                        primaryFont.hbBlob.destroy();
+                    }
+                }
 
                 // Step 5: Apply all replacements
                 for (let i = 0; i < textEntries.length; i++) {

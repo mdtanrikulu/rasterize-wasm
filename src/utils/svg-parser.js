@@ -4,12 +4,14 @@
 
 function stripInnerTags(content) {
     // Strip inner element tags (e.g. <tspan ...>...</tspan>) keeping only text
-    return content.replace(/<[^>]+>/g, '').trim();
+    // [^<>] keeps each match attempt bounded by the next '<' (no quadratic backtracking)
+    return content.replace(/<[^<>]*>/g, '').trim();
 }
 
 function attr(str, name) {
-    // Match both single- and double-quoted attribute values, with optional spaces around =
-    const m = str.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`));
+    // Match both single- and double-quoted attribute values, with optional spaces around =.
+    // Leading \s so 'x' doesn't match inside 'dx' (or 'fill' inside 'data-fill')
+    const m = str.match(new RegExp(`\\s${name}\\s*=\\s*["']([^"']+)["']`));
     return m?.[1] ?? null;
 }
 
@@ -71,7 +73,7 @@ function parseTextElement(fullMatch, contentMatch) {
 }
 
 export function extractAllTextContent(svgString) {
-    const regex = /<text\b[^>]*>((?:(?!<text\b)[\s\S])*?)<\/text>/g;
+    const regex = /<text\b[^<>]*>((?:(?!<text\b)[\s\S])*?)<\/text>/g;
     const results = [];
     let match;
     while ((match = regex.exec(svgString)) !== null) {
@@ -111,7 +113,8 @@ export function extractFontFeatures(svgString) {
 }
 
 export function replaceTextElement(svgString, textElement, replacementContent) {
-    return svgString.replace(textElement, replacementContent);
+    // Function form: a string replacement would expand $&, $` and $' from SVG-controlled content
+    return svgString.replace(textElement, () => replacementContent);
 }
 
 /**
@@ -121,13 +124,14 @@ export function replaceTextElement(svgString, textElement, replacementContent) {
  * dimension attributes that are invalid for objectBoundingBox coordinates.
  */
 export function optimizeFilters(svgString) {
-    return svgString.replace(
-        /<filter\b([^>]*)\bfilterUnits\s*=\s*["']userSpaceOnUse["']([^>]*)>/g,
-        (match, before, after) => {
-            // Switch to objectBoundingBox and strip absolute x/y/width/height
-            let attrs = before + after;
-            attrs = attrs.replace(/\s*(?:x|y|width|height)\s*=\s*["'][^"']*["']/g, '');
-            return `<filter${attrs} filterUnits="objectBoundingBox">`;
-        }
-    );
+    // Match the whole tag first, then edit it; one combined regex backtracks quadratically
+    const userSpace = /\sfilterUnits\s*=\s*["']userSpaceOnUse["']/;
+    return svgString.replace(/<filter\b[^<>]*>/g, (tag) => {
+        if (!userSpace.test(tag)) return tag;
+        // Switch to objectBoundingBox and strip absolute x/y/width/height
+        const attrs = tag.slice('<filter'.length, -1)
+            .replace(userSpace, '')
+            .replace(/\s(?:x|y|width|height)\s*=\s*["'][^"']*["']/g, '');
+        return `<filter${attrs} filterUnits="objectBoundingBox">`;
+    });
 }

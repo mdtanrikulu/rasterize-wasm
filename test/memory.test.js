@@ -1,19 +1,24 @@
 /**
- * Regression test: resvg's wasm objects must be freed after every render,
- * otherwise wasm linear memory grows until a GC happens to run finalizers.
+ * Regression tests: per-render wasm objects (resvg's tree and pixmap, HarfBuzz's
+ * embedded font) must be freed, otherwise wasm linear memory only ever grows.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
 
-// Capture the resvg wasm instance before the first render initializes it
+// Capture the wasm instances before the first render initializes them
 let resvgMemory = null;
+let hbMemory = null;
 const originalInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = async function (...args) {
     const result = await originalInstantiate.apply(this, args);
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     if (instance?.exports?.__wbg_resvg_free) {
         resvgMemory = instance.exports.memory;
+    }
+    if (instance?.exports?.hb_blob_create) {
+        hbMemory = Object.values(instance.exports).find(e => e instanceof WebAssembly.Memory);
     }
     return result;
 };
@@ -78,4 +83,19 @@ test('resvg wasm memory stays flat across repeated renders', async () => {
         growth < 8 * 1024 * 1024,
         `resvg memory grew ${mb(growth)} MB across renders (${sizes.map(mb).join(', ')} MB)`
     );
+});
+
+test('HarfBuzz memory stays flat across renders with an embedded font', async () => {
+    // Reuse the 72 KB Satoshi @font-face from the Japanese ENS example
+    const style = readFileSync(new URL('../examples/assets/ens-japanese.svg', import.meta.url), 'utf8')
+        .match(/<style[\s\S]*?<\/style>/)[0];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">${style}<text x="1" y="15" font-size="10">abc</text></svg>`;
+
+    const renderer = new UniversalSVGRenderer();
+    await renderer.render(svg);
+    const before = hbMemory.buffer.byteLength;
+    for (let i = 0; i < 60; i++) await renderer.render(svg);
+    const growth = hbMemory.buffer.byteLength - before;
+    // Leaking the font copy would grow ~4 MB over 60 renders
+    assert.ok(growth < 1024 * 1024, `HarfBuzz memory grew ${(growth / 1048576).toFixed(1)} MB over 60 renders`);
 });

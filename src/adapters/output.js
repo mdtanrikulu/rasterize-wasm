@@ -4,17 +4,8 @@
 import { createRequire } from 'module';
 
 export function toBase64(pngBuffer, includeDataURL = false) {
-    let base64;
-    if (typeof pngBuffer.toString === 'function') {
-        try {
-            base64 = pngBuffer.toString('base64');
-        } catch {
-            // Fallback for environments where Buffer.toString('base64') is unavailable
-            base64 = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
-        }
-    } else {
-        base64 = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
-    }
+    // resvg returns a Uint8Array, whose toString() ignores 'base64'
+    const base64 = Buffer.from(pngBuffer).toString('base64');
     return includeDataURL ? `data:image/png;base64,${base64}` : base64;
 }
 

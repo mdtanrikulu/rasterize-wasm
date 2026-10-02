@@ -74,23 +74,28 @@ async function getHb() {
             } catch {}
         }
         let moduleArgs;
+        // Emscripten never settles if instantiateWasm fails, so surface that failure ourselves
+        let failInstantiate;
+        const instantiateFailed = new Promise((_, reject) => { failInstantiate = reject; });
         if (wasmBinary && typeof WebAssembly !== 'undefined' && wasmBinary instanceof WebAssembly.Module) {
             // Pre-compiled WebAssembly.Module (e.g. Cloudflare Workers CompiledWasm)
             moduleArgs = {
                 instantiateWasm(info, receiveInstance) {
-                    WebAssembly.instantiate(wasmBinary, info).then(inst => {
-                        receiveInstance(inst);
-                    });
+                    WebAssembly.instantiate(wasmBinary, info).then(receiveInstance, failInstantiate);
                     return {};
                 }
             };
         } else {
             moduleArgs = wasmBinary ? { wasmBinary } : {};
         }
-        const instance = await createHarfBuzz(moduleArgs);
+        const instance = await Promise.race([createHarfBuzz(moduleArgs), instantiateFailed]);
         _hb = hbjs(instance);
         return _hb;
-    })();
+    })().catch((error) => {
+        // Don't cache the failure; a corrected setHarfBuzzWasm() can retry
+        _hbPromise = null;
+        throw error;
+    });
     return _hbPromise;
 }
 
@@ -133,12 +138,19 @@ export const LOCAL_FONT_FILES = {
 export class FontLoader {
     static _fontCache = new Map();
 
-    static async _loadLocalFont(fontFamily) {
-        const cacheKey = fontFamily;
-        if (this._fontCache.has(cacheKey)) {
-            return this._fontCache.get(cacheKey);
+    static _loadLocalFont(fontFamily) {
+        // Cache the promise so concurrent cold renders share one load instead of leaking duplicates
+        if (!this._fontCache.has(fontFamily)) {
+            const pending = this._readLocalFont(fontFamily);
+            this._fontCache.set(fontFamily, pending);
+            // Don't cache failures, so a later setFontData() can still supply the font
+            const forget = () => this._fontCache.delete(fontFamily);
+            pending.then(font => { if (!font) forget(); }, forget);
         }
+        return this._fontCache.get(fontFamily);
+    }
 
+    static async _readLocalFont(fontFamily) {
         const filename = LOCAL_FONT_FILES[fontFamily];
         if (!filename) return null;
 
@@ -158,9 +170,7 @@ export class FontLoader {
 
         if (!brBuf) return null;
         const fontBuffer = await decompress(brBuf);
-        const fontObj = await createHbFont(fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength));
-        this._fontCache.set(cacheKey, fontObj);
-        return fontObj;
+        return createHbFont(fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength));
     }
 
     static async loadPrimaryFont(fontBuffer) {
