@@ -1,6 +1,6 @@
 {
   "name": "rasterize-wasm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Universal Unicode SVG to PNG renderer with international font support",
   "main": "src/index.js",
   "type": "module",
@@ -14,7 +14,7 @@
   "scripts": {
     "start": "node dev/main.js",
     "example": "node examples/usage.js",
-    "test": "node examples/usage.js"
+    "test": "node --test test/*.test.js && node examples/usage.js"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "^2.6.2",

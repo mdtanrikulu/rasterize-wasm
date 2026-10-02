@@ -39,12 +39,19 @@ export class SVGRenderer {
     static async renderSVGToPNG(svgString, options = {}) {
         await this.initializeWasm(options.wasmBuffer);
 
+        // Free the wasm-side tree and pixmap eagerly; resvg-wasm otherwise only
+        // releases them via FinalizationRegistry, and wasm memory never shrinks.
+        let resvg;
+        let pngData;
         try {
-            const resvg = new Resvg(svgString, options);
-            const pngData = resvg.render();
+            resvg = new Resvg(svgString, options);
+            pngData = resvg.render();
             return pngData.asPng();
         } catch (error) {
             throw new Error(`SVG rendering failed: ${error.message}`);
+        } finally {
+            pngData?.free();
+            resvg?.free();
         }
     }
 }
