@@ -84,17 +84,7 @@ export function extractAllTextContent(svgString) {
 
 export function extractEmbeddedFont(svgString) {
     const fontDataMatch = svgString.match(/src:\s*url\(data:(?:font\/(?:truetype|woff2?|opentype)|application\/(?:x-font-ttf|font-woff2?|vnd\.ms-opentype))(?:;[^;)]+)*;base64,([^)]+)\)/);
-    if (!fontDataMatch) {
-        return null;
-    }
-
-    try {
-        const fontBuffer = Buffer.from(fontDataMatch[1], 'base64');
-        return fontBuffer;
-    } catch (error) {
-        console.warn('Failed to extract embedded font:', error.message);
-        return null;
-    }
+    return fontDataMatch ? Buffer.from(fontDataMatch[1], 'base64') : null;
 }
 
 export function extractFontFeatures(svgString) {

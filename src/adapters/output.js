@@ -11,21 +11,18 @@ export function toBase64(pngBuffer, includeDataURL = false) {
 
 export function toFile(pngBuffer, filePath, baseDir = process.cwd()) {
     const require = createRequire(import.meta.url);
-    const { dirname, resolve } = require('path');
-    const { writeFileSync, mkdirSync, existsSync } = require('fs');
+    const { dirname, resolve, relative, isAbsolute, sep } = require('path');
+    const { writeFileSync, mkdirSync } = require('fs');
 
     const resolved = resolve(baseDir, filePath);
-    const resolvedBase = resolve(baseDir);
-    if (!resolved.startsWith(resolvedBase + '/') && resolved !== resolvedBase) {
+    // relative() uses the platform separator, so this also holds on Windows
+    const rel = relative(resolve(baseDir), resolved);
+    if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) {
         throw new Error('Path traversal detected: output path escapes base directory');
     }
 
     try {
-        const dir = dirname(resolved);
-        if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true });
-        }
-
+        mkdirSync(dirname(resolved), { recursive: true });
         writeFileSync(resolved, pngBuffer);
         return resolved;
     } catch (error) {

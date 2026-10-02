@@ -1,32 +1,11 @@
 /**
  * Text processing and path generation (harfbuzzjs backend)
  */
-import { createRequire } from 'module';
-import { FontLoader } from './font-loader.js';
+import { FontLoader, readBundledFile } from './font-loader.js';
 import { decompress } from '../utils/decompress.js';
 import bidiFactory from 'bidi-js';
 
 const bidi = bidiFactory();
-
-let _require;
-function getRequire() {
-    if (!_require) _require = createRequire(import.meta.url);
-    return _require;
-}
-
-let _fontsDir = null;
-function getFontsDir() {
-    if (_fontsDir) return _fontsDir;
-    try {
-        const require = getRequire();
-        const { join } = require('path');
-        const { fileURLToPath } = require('url');
-        _fontsDir = join(fileURLToPath(import.meta.url), '..', '..', '..', 'fonts');
-    } catch {
-        _fontsDir = '/fonts';
-    }
-    return _fontsDir;
-}
 
 let _emojiMap;
 let _emojiMapPromise;
@@ -51,11 +30,7 @@ async function _getEmojiMap() {
     if (_emojiMapPromise) return _emojiMapPromise;
     _emojiMapPromise = (async () => {
         try {
-            const require = getRequire();
-            const { readFileSync } = require('fs');
-            const { join } = require('path');
-            const br = readFileSync(join(getFontsDir(), 'twemoji.json.br'));
-            const raw = await decompress(br);
+            const raw = await decompress(readBundledFile('twemoji.json.br'));
             _emojiMap = JSON.parse(Buffer.from(raw).toString());
         } catch {
             _emojiMap = {};
@@ -98,22 +73,10 @@ export function isEmoji(grapheme) {
 
 export async function loadEmojiSvg(grapheme) {
     // Build key with FE0F kept (jdecked/twemoji uses FE0F in filenames for ZWJ sequences)
-    const allCodepoints = [...grapheme]
-        .map(c => c.codePointAt(0))
-        .map(cp => cp.toString(16).toLowerCase());
-    const withFE0F = allCodepoints.join('-');
-    // Also build a fallback without FE0F for simple emoji
-    const withoutFE0F = [...grapheme]
-        .map(c => c.codePointAt(0))
-        .filter(cp => cp !== 0xFE0F)
-        .map(cp => cp.toString(16).toLowerCase())
-        .join('-');
-    try {
-        const map = await _getEmojiMap();
-        return map[withFE0F] || (withFE0F !== withoutFE0F ? map[withoutFE0F] : null) || null;
-    } catch {
-        return null;
-    }
+    const codepoints = [...grapheme].map(c => c.codePointAt(0).toString(16));
+    // Fall back to the key without FE0F for simple emoji
+    const map = await _getEmojiMap();
+    return map[codepoints.join('-')] || map[codepoints.filter(cp => cp !== 'fe0f').join('-')] || null;
 }
 
 function escapeXml(str) {

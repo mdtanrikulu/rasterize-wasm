@@ -40,7 +40,6 @@ export class UniversalSVGRenderer {
                 // Step 3: Load fonts in parallel
                 const embeddedFontBuffer = extractEmbeddedFont(svgString);
                 const allText = textEntries.map(e => e.textContent).join('');
-                const dominantWeight = textEntries[0]?.attributes?.fontWeight || 700;
 
                 let primaryFont, internationalFonts, fallbackFont;
 

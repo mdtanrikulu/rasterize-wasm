@@ -12,27 +12,16 @@ function getRequire() {
     return _require;
 }
 
-let _fontsDir = null;
-function getFontsDir() {
-    if (_fontsDir) return _fontsDir;
+/**
+ * Read a file from the bundled fonts/ directory.
+ * Returns null when missing or without filesystem access (Workers).
+ */
+export function readBundledFile(filename) {
     try {
         const require = getRequire();
+        const { readFileSync } = require('fs');
         const { fileURLToPath } = require('url');
-        const { dirname, join } = require('path');
-        const __filename = fileURLToPath(import.meta.url);
-        _fontsDir = join(dirname(__filename), '../../fonts');
-    } catch {
-        _fontsDir = '/fonts';
-    }
-    return _fontsDir;
-}
-
-function readFontFile(fontPath) {
-    try {
-        const require = getRequire();
-        const { readFileSync, existsSync } = require('fs');
-        if (!existsSync(fontPath)) return null;
-        return readFileSync(fontPath);
+        return readFileSync(fileURLToPath(new URL(`../../fonts/${filename}`, import.meta.url)));
     } catch {
         return null;
     }
@@ -154,20 +143,8 @@ export class FontLoader {
         const filename = LOCAL_FONT_FILES[fontFamily];
         if (!filename) return null;
 
-        // Check pre-loaded data first (Workers path)
-        let brBuf = _fontData.get(fontFamily) || null;
-
-        // Fall back to filesystem (Node.js path)
-        if (!brBuf) {
-            try {
-                const { join } = getRequire()('path');
-                const fontPath = join(getFontsDir(), filename);
-                brBuf = readFontFile(fontPath);
-            } catch {
-                // Workers: getRequire() throws
-            }
-        }
-
+        // Pre-loaded data first (Workers path), then the filesystem (Node.js path)
+        const brBuf = _fontData.get(fontFamily) || readBundledFile(filename);
         if (!brBuf) return null;
         const fontBuffer = await decompress(brBuf);
         return createHbFont(fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength));
@@ -242,29 +219,15 @@ export class FontLoader {
      * Returns the same Map<scriptEntry, fontObj> shape as loadInternationalFonts.
      */
     static getInternationalFontsFromRegistry(text, fontRegistry) {
-        const fontMap = new Map();
-        for (const entry of this.SCRIPT_FONTS) {
-            if (entry.regex.test(text)) {
-                const fontName = entry.fonts[0];
-                const font = fontRegistry.get(fontName);
-                if (font) fontMap.set(entry, font);
-            }
-        }
-        return fontMap;
+        const pairs = this.SCRIPT_FONTS.filter(e => e.regex.test(text)).map(e => [e, fontRegistry.get(e.fonts[0])]);
+        return new Map(pairs.filter(([, font]) => font));
     }
 
     static async loadInternationalFonts(text) {
-        const fontMap = new Map();
-
-        // Detect which scripts are present and load their local fonts
-        for (const entry of this.SCRIPT_FONTS) {
-            if (entry.regex.test(text)) {
-                const font = await this._loadLocalFont(entry.fonts[0]);
-                if (font) fontMap.set(entry, font);
-            }
-        }
-
-        return fontMap;
+        // Load the detected scripts' fonts in parallel
+        const pairs = await Promise.all(this.SCRIPT_FONTS.filter(e => e.regex.test(text))
+            .map(async e => [e, await this._loadLocalFont(e.fonts[0])]));
+        return new Map(pairs.filter(([, font]) => font));
     }
 
     /**
